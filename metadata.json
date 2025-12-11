@@ -1,0 +1,8 @@
+{
+  "name": "Redesign Ai",
+  "description": "Professional AI-powered architectural and interior design tool transforming spaces using Google Gemini.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
