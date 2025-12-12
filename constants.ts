@@ -176,22 +176,19 @@ export const MODE_CONFIG = {
     icon: HardHat, 
     isPro: false, 
     styles: [
-      'Modern Finish', 
-      'Minimalist Finish', 
-      'Luxury Finish', 
-      'Industrial Finish', 
-      'Traditional Finish',
-      // Added
-      'Steel Frame Structure',
-      'Brickwork in Progress',
-      'Timber Framing',
-      'Concrete Pouring',
-      'Scaffolding & Wrap',
-      'Exposed Ductwork',
-      'Drywall Installation',
-      'Flooring Installation',
-      'Roofing Phase',
-      'Demolition Phase'
+      'Modern Finished Look', 
+      'Minimalist Finished Look', 
+      'Luxury Finished Look', 
+      'Industrial Finished Look', 
+      'Traditional Finished Look',
+      'Completed Brick Facade',
+      'Completed Timber Frame',
+      'Finished Concrete Structure',
+      'Fully Painted & Furnished',
+      'Completed Commercial Exterior',
+      'Completed Residential Exterior',
+      'Finished Roof & Siding',
+      'Completed Landscaping & Driveway'
     ] 
   },
   [DesignMode.ARCHITECTURAL]: { 

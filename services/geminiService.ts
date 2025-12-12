@@ -39,6 +39,10 @@ export const generateDesigns = async (
     }
   }
 
+  if (config.mode === DesignMode.UNDER_CONSTRUCTION) {
+    prompt += " The provided image shows a construction site, unfinished frame, or renovation in progress. Your goal is to visualize the FULLY FINISHED, COMPLETED result. Hide all construction materials, scaffolding, debris, and equipment. Show clean, finished surfaces, completed flooring/walls, and a habitable environment ready for use.";
+  }
+
   prompt += ` User Instructions: ${config.prompt}.`;
 
   if (config.blueprintParams) {
