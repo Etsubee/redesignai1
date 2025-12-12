@@ -56,12 +56,13 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     ctx.restore();
   };
 
-  const generateRevealVideo = async (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, recorder: MediaRecorder) => {
-    const [imgBefore, imgAfter] = await Promise.all([
-      loadImg(beforeImage), 
-      loadImg(afterImage)
-    ]);
-
+  const generateRevealVideo = async (
+    ctx: CanvasRenderingContext2D, 
+    canvas: HTMLCanvasElement, 
+    recorder: MediaRecorder,
+    imgBefore: HTMLImageElement,
+    imgAfter: HTMLImageElement
+  ) => {
     const duration = 4000; // 4s
     const startTime = performance.now();
 
@@ -82,24 +83,18 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       // 2. Draw Foreground (BEFORE) - Clipped
       ctx.save();
       ctx.beginPath();
-      // Reveal moves from Right to Left (showing After)
-      // So Before is on the Right side initially? No, standard reveal:
-      // Usually full Before -> Slide reveals After.
-      // Let's do: Slider moves from Right to Left. 
-      // Right side = Before. Left side = After.
-      // Wait, standard sliders usually have Before on Left, After on Right.
-      // Let's stick to standard: Before on Left, After on Right.
-      // Animation: Slider starts at Width (Full Before) and moves to 0 (Full After) or 50%?
-      // "Reveal video" usually means revealing the result. So start with Before, reveal After.
-      // So draw Before on top. Clip rect decreases width.
       
-      const revealWidth = canvas.width - sliderPos; // Starts at Width, goes to 0
+      // Reveal: Slider moves from Right (Full Width) to Left (0 Width)
+      // Actually standard sliders usually start at 50% or 100%. 
+      // Let's animate from Full Before (width=canvas.width) to Full After (width=0)
+      const revealWidth = canvas.width - sliderPos; 
+      
       ctx.rect(0, 0, revealWidth, canvas.height);
       ctx.clip();
       
       ctx.drawImage(imgBefore, 0, 0, canvas.width, canvas.height);
       
-      // Label: BEFORE (Top Left) - drawn inside clip so it disappears with image
+      // Label: BEFORE (Top Left)
       drawLabel(ctx, "BEFORE", 40, 60, 'left');
       
       ctx.restore();
@@ -120,20 +115,21 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-        recorder.stop();
+        if (recorder.state === 'recording') recorder.stop();
       }
     };
     requestAnimationFrame(animate);
   };
 
-  const generateShowcaseVideo = async (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, recorder: MediaRecorder) => {
-    // Collect images: Before Image + Generated Variations
-    const imagesToLoad = beforeImage ? [beforeImage, ...allVariations] : allVariations;
-    const loadedImages = await Promise.all(imagesToLoad.map(src => loadImg(src)));
-    
+  const generateShowcaseVideo = async (
+    ctx: CanvasRenderingContext2D, 
+    canvas: HTMLCanvasElement, 
+    recorder: MediaRecorder,
+    loadedImages: HTMLImageElement[]
+  ) => {
     // Config
-    const displayTime = 2000; // Time to show image static
-    const transitionTime = 1000; // Crossfade time
+    const displayTime = 1500; // Time to show image static (Reduced for speed)
+    const transitionTime = 800; // Crossfade time (Reduced for speed)
     const cycleTime = displayTime + transitionTime;
     const totalDuration = loadedImages.length * cycleTime;
     
@@ -145,13 +141,13 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       // Calculate current image index
       const totalCycleIndex = Math.floor(elapsed / cycleTime);
       const currentImgIndex = totalCycleIndex % loadedImages.length;
-      const nextImgIndex = (currentImgIndex + 1) % loadedImages.length; // Loop or stop? STOP.
+      const nextImgIndex = (currentImgIndex + 1) % loadedImages.length;
       
       // Stop condition
       if (totalCycleIndex >= loadedImages.length) {
-         // Hold last frame for a moment then stop
-         if (elapsed > totalDuration + 500) {
-             recorder.stop();
+         // Hold last frame briefly then stop
+         if (elapsed > totalDuration + 200) {
+             if (recorder.state === 'recording') recorder.stop();
              return;
          }
       }
@@ -163,8 +159,9 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      const currentImg = loadedImages[Math.min(currentImgIndex, loadedImages.length -1)];
-      const nextImg = loadedImages[Math.min(nextImgIndex, loadedImages.length -1)];
+      // Safe index access
+      const currentImg = loadedImages[Math.min(currentImgIndex, loadedImages.length - 1)];
+      const nextImg = loadedImages[Math.min(nextImgIndex, loadedImages.length - 1)];
 
       // Draw Logic
       if (!inTransition) {
@@ -185,8 +182,14 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
 
       // Labels
       let label = "";
-      if (beforeImage && currentImgIndex === 0 && !inTransition) label = "ORIGINAL";
-      else if (currentImgIndex > (beforeImage ? 0 : -1)) label = `VARIATION ${beforeImage ? currentImgIndex : currentImgIndex + 1}`;
+      // If we have a before image, index 0 is Original, others are variations
+      if (beforeImage) {
+          if (currentImgIndex === 0 && !inTransition) label = "ORIGINAL";
+          else if (currentImgIndex > 0) label = `VARIATION ${currentImgIndex}`;
+      } else {
+          // If no before image (e.g. blueprint generation), just number variations
+          label = `VARIATION ${currentImgIndex + 1}`;
+      }
       
       if (label) drawLabel(ctx, label, 40, 60, 'left');
       drawWatermark(ctx, canvas.width, canvas.height);
@@ -209,8 +212,36 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     canvas.width = 1280;
     canvas.height = 720;
 
-    const stream = canvas.captureStream(30);
-    const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+    // Preload images BEFORE starting recorder to avoid dead frames
+    let images: HTMLImageElement[] = [];
+    try {
+        if (mode === 'REVEAL') {
+            const [imgBefore, imgAfter] = await Promise.all([
+                loadImg(beforeImage), 
+                loadImg(afterImage)
+            ]);
+            images = [imgBefore, imgAfter];
+        } else {
+            const imagesToLoad = beforeImage ? [beforeImage, ...allVariations] : allVariations;
+            images = await Promise.all(imagesToLoad.map(src => loadImg(src)));
+        }
+    } catch (e) {
+        console.error("Failed to load images", e);
+        setIsProcessing(false);
+        return;
+    }
+
+    const stream = canvas.captureStream(30); // 30 FPS
+    
+    // Attempt to use valid mime type
+    let mimeType = 'video/webm';
+    if (MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
+        mimeType = 'video/webm; codecs=vp9';
+    } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+        mimeType = 'video/mp4'; // Safari fallback often
+    }
+
+    const recorder = new MediaRecorder(stream, { mimeType });
     const chunks: Blob[] = [];
 
     recorder.ondataavailable = (e) => {
@@ -218,7 +249,7 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     };
 
     recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: 'video/webm' });
+      const blob = new Blob(chunks, { type: mimeType });
       const url = URL.createObjectURL(blob);
       setVideoUrl(url);
       setIsProcessing(false);
@@ -226,41 +257,42 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
 
     recorder.start();
 
+    // Start drawing loop
     if (mode === 'REVEAL') {
-      await generateRevealVideo(ctx, canvas, recorder);
+      generateRevealVideo(ctx, canvas, recorder, images[0], images[1]);
     } else {
-      await generateShowcaseVideo(ctx, canvas, recorder);
+      generateShowcaseVideo(ctx, canvas, recorder, images);
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-3xl">
-        <div className="flex justify-between items-center mb-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 md:p-6 w-full max-w-3xl flex flex-col max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6 shrink-0">
           <h3 className="text-xl font-bold text-white">Cinematic Video Generator</h3>
           <button onClick={onClose}><X className="w-5 h-5 text-slate-400 hover:text-white" /></button>
         </div>
 
         {/* Mode Select */}
-        <div className="flex bg-slate-800 p-1 rounded-lg mb-6 w-fit mx-auto border border-slate-700">
+        <div className="flex flex-col sm:flex-row bg-slate-800 p-1 rounded-lg mb-6 w-full sm:w-fit mx-auto border border-slate-700 shrink-0">
           <button 
             onClick={() => setMode('REVEAL')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'REVEAL' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+            className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'REVEAL' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
           >
             <MonitorPlay className="w-4 h-4" /> Reveal Slider
           </button>
           <button 
              onClick={() => setMode('SHOWCASE')}
-             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'SHOWCASE' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+             className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'SHOWCASE' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
           >
             <Film className="w-4 h-4" /> Showcase Slideshow
           </button>
         </div>
 
         {/* Canvas / Preview */}
-        <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-6 border border-slate-800 shadow-2xl">
+        <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-6 border border-slate-800 shadow-2xl shrink-0">
            <canvas ref={canvasRef} className="w-full h-full object-contain" />
            {videoUrl && (
              <video src={videoUrl} controls autoPlay className="absolute inset-0 w-full h-full bg-black z-10" />
@@ -273,16 +305,16 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
         </div>
 
         {/* Actions */}
-        <div className="flex justify-between items-center">
-          <p className="text-xs text-slate-500">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
+          <p className="text-xs text-slate-500 text-center sm:text-left">
             {mode === 'REVEAL' ? 'Generates a 4s before/after sliding reveal.' : `Generates a slideshow of all ${allVariations.length} variations.`}
           </p>
 
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
             <button 
               onClick={startGeneration} 
               disabled={isProcessing || (mode === 'REVEAL' && (!beforeImage || !afterImage))}
-              className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
+              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white w-full sm:w-auto"
             >
               {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               {isProcessing ? 'Rendering...' : 'Generate Video'}
@@ -292,7 +324,7 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
               <a 
                 href={videoUrl} 
                 download={`redesign-${mode.toLowerCase()}.webm`}
-                className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium transition-colors text-white"
+                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium transition-colors text-white w-full sm:w-auto"
               >
                 <Download className="w-4 h-4" /> Download
               </a>

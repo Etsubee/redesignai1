@@ -3,27 +3,21 @@ import {
   Menu, Upload, Image as ImageIcon, Layers, Zap, Clock, Settings, 
   LogOut, User, Check, AlertCircle, Loader2, Download, Video, 
   ChevronRight, ChevronLeft, Maximize2, Plus, Minus, Globe, ExternalLink,
-  Rotate3D, ScanEye
+  Rotate3D, ScanEye, FileCode, FileText
 } from 'lucide-react';
+import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 import { DesignMode, DesignConfig, Project, UserProfile, UserTier, BlueprintParams } from './types';
 import { MODE_CONFIG, DEFAULT_PROMPTS, APP_NAME, ROOM_TYPES } from './constants';
 import { getApiKey, saveProject, getProjects, deleteProject, getUserTier } from './services/storage';
 import { generateDesigns, analyzeDesign } from './services/geminiService';
+import { exportToHTML, exportToPDF } from './services/exportService';
 import { ComparisonSlider } from './components/ComparisonSlider';
 import { VideoGeneratorModal } from './components/VideoGeneratorModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PannellumViewer } from './components/PannellumViewer';
 import { StereoViewer } from './components/StereoViewer';
-
-// --- Mock Firebase Auth for Demo ---
-const mockLogin = (): UserProfile => ({
-  uid: 'demo-user-123',
-  displayName: 'Demo Architect',
-  email: 'architect@example.com',
-  photoURL: 'https://picsum.photos/100/100',
-  tier: getUserTier()
-});
+import { auth, googleProvider } from './services/firebase';
 
 const App: React.FC = () => {
   // Global State
@@ -76,6 +70,13 @@ const App: React.FC = () => {
 
   // --- Effects ---
   useEffect(() => {
+    // Responsive init: Close sidebar on mobile by default
+    if (window.innerWidth < 1024) {
+      setSidebarOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
     const key = getApiKey();
     if (key) setApiKeyState(key);
   }, [showSettings]); // Reload key when settings close
@@ -90,17 +91,43 @@ const App: React.FC = () => {
     }
   }, [currentMode]);
 
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        setUser({
+          uid: currentUser.uid,
+          displayName: currentUser.displayName,
+          email: currentUser.email,
+          photoURL: currentUser.photoURL,
+          tier: getUserTier() // Retrieve tier from local storage for now
+        });
+      } else {
+        setUser(null);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   // --- Handlers ---
 
-  const handleLogin = () => {
-    // In a real app, use signInWithPopup(auth, provider)
-    setUser(mockLogin());
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (e: any) {
+      console.error("Login Error:", e);
+      setError("Login failed. Please check your network connection.");
+    }
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    setUploadedImage(null);
-    setGeneratedImages([]);
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setUploadedImage(null);
+      setGeneratedImages([]);
+    } catch (e: any) {
+      console.error("Logout Error:", e);
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -207,6 +234,18 @@ const App: React.FC = () => {
     }
   };
 
+  const handleExportHTML = () => {
+    // Export all variations
+    if (generatedImages.length === 0) return;
+    exportToHTML(uploadedImage, generatedImages, analysis, prompt, style);
+  };
+
+  const handleExportPDF = () => {
+    // PDF currently only exports selected variation
+    if (!generatedImages[selectedVariation]) return;
+    exportToPDF(uploadedImage, generatedImages[selectedVariation], analysis, prompt, style);
+  };
+
   const updateBlueprintParam = (key: keyof BlueprintParams, value: number) => {
     setBlueprintParams(prev => ({ ...prev, [key]: Math.max(0, value) }));
   };
@@ -267,90 +306,141 @@ const App: React.FC = () => {
   );
 
   const renderSidebar = () => (
-    <aside className={`fixed left-0 top-0 h-full bg-slate-900 border-r border-slate-800 transition-all z-20 ${isSidebarOpen ? 'w-64' : 'w-20'} flex flex-col`}>
-      <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-        {isSidebarOpen && <h1 className="text-xl font-bold text-white tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Redesign Ai</h1>}
-        <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800">
-          {isSidebarOpen ? <ChevronLeft size={20} /> : <Menu size={20} />}
-        </button>
-      </div>
+    <>
+      {/* Mobile Backdrop */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
-      <div className="flex-1 overflow-y-auto py-4 space-y-1">
-        {Object.entries(MODE_CONFIG).map(([mode, config]) => {
-          const m = mode as DesignMode;
-          const Icon = config.icon;
-          const isLocked = config.isPro && user?.tier !== UserTier.PRO;
-
-          return (
-            <button
-              key={mode}
-              onClick={() => !isLocked && setCurrentMode(m)}
-              className={`w-full px-4 py-3 flex items-center gap-3 transition-colors relative
-                ${currentMode === m ? 'bg-indigo-600/10 text-indigo-400 border-r-2 border-indigo-500' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}
-                ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}
-              `}
-            >
-              <Icon size={20} />
-              {isSidebarOpen && (
-                <span className="text-sm font-medium flex-1 text-left">{mode}</span>
-              )}
-              {isSidebarOpen && config.isPro && (
-                <span className="text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded font-bold">PRO</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="p-4 border-t border-slate-800 space-y-2">
-        <button onClick={() => setShowSettings(true)} className="flex items-center gap-3 text-slate-400 hover:text-white w-full p-2 rounded-lg hover:bg-slate-800">
-          <Settings size={20} />
-          {isSidebarOpen && <span className="text-sm">Settings</span>}
-        </button>
-        {user ? (
-          <div className="flex items-center gap-3 p-2 rounded-lg bg-slate-800/50">
-            <img src={user.photoURL || ''} className="w-8 h-8 rounded-full" alt="User" />
-            {isSidebarOpen && (
-              <div className="flex-1 overflow-hidden">
-                <p className="text-sm font-medium text-white truncate">{user.displayName}</p>
-                <p className="text-xs text-indigo-400">{user.tier}</p>
-              </div>
-            )}
-            {isSidebarOpen && <button onClick={handleLogout}><LogOut size={16} className="text-slate-500 hover:text-red-400" /></button>}
-          </div>
-        ) : (
-          <button onClick={handleLogin} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
-            <User size={16} /> {isSidebarOpen && "Sign In"}
+      {/* Sidebar Container */}
+      <aside className={`
+        fixed top-0 left-0 h-full bg-slate-900 border-r border-slate-800 z-40 transition-all duration-300 ease-in-out flex flex-col
+        ${/* Mobile: Slide in/out */ ''}
+        transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} w-64
+        ${/* Desktop: Always visible, just width changes */ ''}
+        lg:transform-none lg:translate-x-0 ${isSidebarOpen ? 'lg:w-64' : 'lg:w-20'}
+      `}>
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+          {(isSidebarOpen || window.innerWidth < 1024) && (
+             <h1 className="text-xl font-bold text-white tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent truncate">
+                Redesign Ai
+             </h1>
+          )}
+          
+          <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 ml-auto">
+            {isSidebarOpen ? <ChevronLeft size={20} /> : <Menu size={20} />}
           </button>
-        )}
-      </div>
-    </aside>
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-4 space-y-1 custom-scrollbar">
+          {Object.entries(MODE_CONFIG).map(([mode, config]) => {
+            const m = mode as DesignMode;
+            const Icon = config.icon;
+            const isLocked = config.isPro && user?.tier !== UserTier.PRO;
+
+            return (
+              <button
+                key={mode}
+                onClick={() => {
+                  if(!isLocked) {
+                    setCurrentMode(m);
+                    if(window.innerWidth < 1024) setSidebarOpen(false); // Close on selection on mobile
+                  }
+                }}
+                className={`w-full px-4 py-3 flex items-center gap-3 transition-colors relative
+                  ${currentMode === m ? 'bg-indigo-600/10 text-indigo-400 border-r-2 border-indigo-500' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}
+                  ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}
+                `}
+              >
+                <Icon size={20} className="shrink-0" />
+                {isSidebarOpen && (
+                  <span className="text-sm font-medium flex-1 text-left truncate">{mode}</span>
+                )}
+                {isSidebarOpen && config.isPro && (
+                  <span className="text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded font-bold">PRO</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="p-4 border-t border-slate-800 space-y-2">
+          <button onClick={() => { setShowSettings(true); if(window.innerWidth < 1024) setSidebarOpen(false); }} className="flex items-center gap-3 text-slate-400 hover:text-white w-full p-2 rounded-lg hover:bg-slate-800">
+            <Settings size={20} className="shrink-0" />
+            {isSidebarOpen && <span className="text-sm truncate">Settings</span>}
+          </button>
+          {user ? (
+            <div className="flex items-center gap-3 p-2 rounded-lg bg-slate-800/50 overflow-hidden">
+              <img src={user.photoURL || ''} className="w-8 h-8 rounded-full shrink-0" alt="User" />
+              {isSidebarOpen && (
+                <div className="flex-1 overflow-hidden">
+                  <p className="text-sm font-medium text-white truncate">{user.displayName}</p>
+                  <p className="text-xs text-indigo-400 truncate">{user.tier}</p>
+                </div>
+              )}
+              {isSidebarOpen && <button onClick={handleLogout}><LogOut size={16} className="text-slate-500 hover:text-red-400 shrink-0" /></button>}
+            </div>
+          ) : (
+            <button onClick={handleLogin} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+              <User size={16} /> {isSidebarOpen && "Sign In"}
+            </button>
+          )}
+        </div>
+      </aside>
+    </>
   );
 
   const renderMainContent = () => (
-    <main className={`transition-all duration-300 ${isSidebarOpen ? 'ml-64' : 'ml-20'} min-h-screen bg-slate-950 p-6`}>
+    <main className={`
+      min-h-screen bg-slate-950 p-4 lg:p-6 transition-all duration-300
+      /* Mobile: Sidebar is overlay, so margin is 0 */
+      ml-0
+      /* Desktop: Sidebar pushes content */
+      ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-20'}
+    `}>
       
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
+      {/* Mobile Header */}
+      <div className="lg:hidden flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 bg-slate-800 text-slate-300 rounded-lg hover:text-white border border-slate-700"
+            >
+              <Menu size={20} />
+            </button>
+            <span className="text-lg font-bold text-white tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
+               Redesign Ai
+            </span>
+        </div>
+        {user && (
+           <img src={user.photoURL || ''} className="w-8 h-8 rounded-full border border-slate-700" alt="User" />
+        )}
+      </div>
+
+      {/* Desktop Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
             {React.createElement(MODE_CONFIG[currentMode].icon, { className: "text-indigo-400" })}
             {currentMode}
           </h2>
-          <p className="text-slate-400 text-sm mt-1">Transform your space with AI.</p>
+          <p className="text-slate-400 text-sm mt-1 hidden md:block">Transform your space with AI.</p>
         </div>
-        <div className="flex gap-3">
-            <button className="flex items-center gap-2 bg-slate-800 text-slate-300 px-4 py-2 rounded-lg hover:bg-slate-700 border border-slate-700" onClick={() => setShowHistory(true)}>
+        <div className="flex gap-3 w-full md:w-auto">
+            <button className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-800 text-slate-300 px-4 py-2 rounded-lg hover:bg-slate-700 border border-slate-700" onClick={() => setShowHistory(true)}>
                 <Clock size={16}/> History
             </button>
         </div>
       </div>
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-140px)]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-auto lg:h-[calc(100vh-140px)]">
         
-        {/* Controls Column */}
-        <div className="lg:col-span-3 flex flex-col gap-4 overflow-y-auto pr-2 custom-scrollbar">
+        {/* Controls Column - Order 2 on mobile (below image), Order 1 on Desktop */}
+        <div className="lg:col-span-3 flex flex-col gap-4 overflow-visible lg:overflow-y-auto lg:pr-2 custom-scrollbar order-2 lg:order-1">
           
           {/* Upload */}
           {(!isBlueprintNew || currentMode !== DesignMode.BLUEPRINT) && (
@@ -358,7 +448,7 @@ const App: React.FC = () => {
               <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2"><ImageIcon size={16}/> Input Image</h3>
               <div className="relative border-2 border-dashed border-slate-700 rounded-lg p-4 hover:border-indigo-500 transition-colors group">
                 <input type="file" onChange={handleImageUpload} accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                <div className="flex flex-col items-center justify-center text-slate-400 min-h-[120px]">
+                <div className="flex flex-col items-center justify-center text-slate-400 min-h-[100px] lg:min-h-[120px]">
                   {uploadedImage ? (
                     <img src={uploadedImage} alt="Uploaded" className="max-h-[120px] rounded object-cover" />
                   ) : (
@@ -473,31 +563,41 @@ const App: React.FC = () => {
                <button onClick={() => setShowVideoModal(true)} className="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-indigo-400 rounded-lg text-sm flex items-center justify-center gap-2">
                   <Video className="w-4 h-4" /> Create Video
                </button>
+
+               {/* Export Options */}
+               <div className="flex gap-2">
+                  <button onClick={handleExportHTML} className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-orange-400 rounded-lg text-sm flex items-center justify-center gap-2">
+                     <FileCode className="w-4 h-4" /> HTML
+                  </button>
+                  <button onClick={handleExportPDF} className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-rose-400 rounded-lg text-sm flex items-center justify-center gap-2">
+                     <FileText className="w-4 h-4" /> PDF
+                  </button>
+               </div>
             </div>
           )}
 
         </div>
 
-        {/* Comparison & Output Column */}
-        <div className="lg:col-span-9 flex flex-col gap-6 h-full">
+        {/* Comparison & Output Column - Order 1 on mobile, Order 2 on desktop */}
+        <div className="lg:col-span-9 flex flex-col gap-6 h-auto lg:h-full order-1 lg:order-2">
           
           {/* Main Viewer */}
-          <div className="flex-1 bg-slate-900 rounded-xl border border-slate-800 overflow-hidden relative shadow-2xl flex flex-col">
+          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden relative shadow-2xl flex flex-col aspect-[4/3] lg:aspect-auto lg:flex-1">
             
             {/* Viewer Header / 360 Toggle */}
             {isResultPanorama && generatedImages.length > 0 && (
-              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 flex bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full p-1 shadow-xl">
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 flex bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full p-1 shadow-xl w-max">
                  <button 
                    onClick={() => setIs360Active(false)}
-                   className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold transition-all ${!is360Active ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                   className={`flex items-center gap-2 px-3 lg:px-4 py-1.5 rounded-full text-xs font-bold transition-all ${!is360Active ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
                  >
-                   <ScanEye size={14} /> Flat View
+                   <ScanEye size={14} /> Flat
                  </button>
                  <button 
                    onClick={() => setIs360Active(true)}
-                   className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold transition-all ${is360Active ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                   className={`flex items-center gap-2 px-3 lg:px-4 py-1.5 rounded-full text-xs font-bold transition-all ${is360Active ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
                  >
-                   <Rotate3D size={14} /> 360° Tour
+                   <Rotate3D size={14} /> 360°
                  </button>
               </div>
             )}
@@ -531,7 +631,7 @@ const App: React.FC = () => {
                     )}
                  </div>
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
+                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 p-8 text-center">
                   {isGenerating ? (
                      <>
                        <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
@@ -555,7 +655,7 @@ const App: React.FC = () => {
                     <button 
                       key={idx}
                       onClick={() => setSelectedVariation(idx)}
-                      className={`relative flex-shrink-0 w-24 h-24 rounded-lg overflow-hidden border-2 transition-all ${selectedVariation === idx ? 'border-indigo-500 ring-2 ring-indigo-500/50' : 'border-slate-700 hover:border-slate-500'}`}
+                      className={`relative flex-shrink-0 w-20 h-20 lg:w-24 lg:h-24 rounded-lg overflow-hidden border-2 transition-all ${selectedVariation === idx ? 'border-indigo-500 ring-2 ring-indigo-500/50' : 'border-slate-700 hover:border-slate-500'}`}
                     >
                       <img src={img} className="w-full h-full object-cover" alt={`Variation ${idx + 1}`} />
                       <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[10px] px-1 rounded-tl">V{idx + 1}</span>
@@ -571,16 +671,16 @@ const App: React.FC = () => {
             <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-6 text-sm grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 animate-fade-in h-auto shrink-0 shadow-lg">
               
               {/* Header / Main Stats */}
-              <div className="lg:col-span-12 flex items-start justify-between border-b border-slate-700 pb-4">
+              <div className="lg:col-span-12 flex flex-col sm:flex-row items-start justify-between border-b border-slate-700 pb-4 gap-4">
                  <div>
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2 flex-wrap">
                        <Globe size={16} className={analysis.marketContext === 'Ethiopian' ? "text-emerald-400" : "text-indigo-400"} />
                        Property Analysis 
-                       <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 font-normal">{analysis.marketContext} Market</span>
+                       <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 font-normal whitespace-nowrap">{analysis.marketContext} Market</span>
                     </h3>
                     <p className="text-slate-400 text-sm mt-1">{analysis.description}</p>
                  </div>
-                 <div className="text-right">
+                 <div className="text-left sm:text-right w-full sm:w-auto">
                     <p className="text-xs text-slate-400 uppercase font-bold">Est. Value Increase</p>
                     <p className="text-2xl text-emerald-400 font-bold">{analysis.estimatedValueIncrease}</p>
                  </div>
@@ -601,7 +701,7 @@ const App: React.FC = () => {
               {/* Cost Breakdown */}
               <div className="lg:col-span-5 space-y-2">
                  <h4 className="text-slate-400 text-xs uppercase font-bold flex items-center gap-2"><Zap size={12}/> Cost Estimates ({analysis.costEstimate})</h4>
-                 <div className="bg-slate-900/50 rounded-lg overflow-hidden border border-slate-700/50">
+                 <div className="bg-slate-900/50 rounded-lg overflow-hidden border border-slate-700/50 overflow-x-auto">
                     <table className="w-full text-xs">
                        <thead className="bg-slate-800 text-slate-400">
                           <tr>
@@ -612,8 +712,8 @@ const App: React.FC = () => {
                        <tbody className="divide-y divide-slate-800">
                           {analysis.costBreakdown?.map((item: any, i: number) => (
                              <tr key={i} className="hover:bg-slate-800/50">
-                                <td className="px-3 py-2 text-slate-300">{item.category}</td>
-                                <td className="px-3 py-2 text-right text-slate-300 font-mono">{item.cost}</td>
+                                <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{item.category}</td>
+                                <td className="px-3 py-2 text-right text-slate-300 font-mono whitespace-nowrap">{item.cost}</td>
                              </tr>
                           ))}
                        </tbody>
@@ -622,7 +722,7 @@ const App: React.FC = () => {
               </div>
               
               {/* Sources */}
-              <div className="lg:col-span-3 space-y-2 border-l border-slate-700 pl-4 md:border-l-0 md:pl-0 lg:border-l lg:pl-4">
+              <div className="lg:col-span-3 space-y-2 border-l-0 border-t md:border-t-0 md:border-l border-slate-700 pt-4 md:pt-0 md:pl-4">
                  <h4 className="text-slate-400 text-xs uppercase font-bold flex items-center gap-2"><ExternalLink size={12}/> Verified Sources</h4>
                  <div className="space-y-1">
                    {analysis.sources && analysis.sources.length > 0 ? (
