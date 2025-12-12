@@ -6,30 +6,31 @@ import { UserTier } from '../types';
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  userId?: string | null;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, userId }) => {
   const [key, setKey] = useState('');
   const [tier, setTierState] = useState<UserTier>(UserTier.FREE);
   const [storageUsed, setStorageUsed] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
-      setKey(getApiKey() || '');
+      setKey(getApiKey(userId) || '');
       setTierState(getUserTier());
       setStorageUsed(getStorageUsage());
     }
-  }, [isOpen]);
+  }, [isOpen, userId]);
 
   const handleSave = () => {
-    if (key.trim()) setApiKey(key.trim());
-    else removeApiKey();
+    if (key.trim()) setApiKey(key.trim(), userId);
+    else removeApiKey(userId);
     setUserTier(tier);
     onClose();
   };
 
   const handleClear = () => {
-    removeApiKey();
+    removeApiKey(userId);
     setKey('');
   };
 
@@ -62,7 +63,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-xs text-slate-500 mt-1">Key is stored locally in your browser.</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {userId ? "Key saved for your account." : "Key saved to this browser."} You get 1500 free requests daily with your own key.
+            </p>
           </div>
 
           {/* Tier Section */}

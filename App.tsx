@@ -5,7 +5,6 @@ import {
   ChevronRight, ChevronLeft, Maximize2, Plus, Minus, Globe, ExternalLink,
   Rotate3D, ScanEye, FileCode, FileText
 } from 'lucide-react';
-import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 import { DesignMode, DesignConfig, Project, UserProfile, UserTier, BlueprintParams } from './types';
 import { MODE_CONFIG, DEFAULT_PROMPTS, APP_NAME, ROOM_TYPES, ALLOWED_EMAILS } from './constants';
@@ -17,7 +16,7 @@ import { VideoGeneratorModal } from './components/VideoGeneratorModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PannellumViewer } from './components/PannellumViewer';
 import { StereoViewer } from './components/StereoViewer';
-import { auth, googleProvider } from './services/firebase';
+import { auth, signInWithGoogle, logoutUser, subscribeToAuthChanges } from './services/firebase';
 
 const App: React.FC = () => {
   // Global State
@@ -76,10 +75,12 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Reload API Key when user changes or settings close
   useEffect(() => {
-    const key = getApiKey();
-    if (key) setApiKeyState(key);
-  }, [showSettings]); // Reload key when settings close
+    // If a user is logged in, try to get their specific key, otherwise get the global one
+    const key = getApiKey(user?.uid);
+    setApiKeyState(key);
+  }, [showSettings, user]);
 
   useEffect(() => {
     // Reset style when mode changes
@@ -98,11 +99,11 @@ const App: React.FC = () => {
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribe = subscribeToAuthChanges(async (currentUser) => {
       if (currentUser) {
         // Double check on persistence load as well
         if (ALLOWED_EMAILS.length > 0 && currentUser.email && !ALLOWED_EMAILS.includes(currentUser.email)) {
-             await signOut(auth);
+             await logoutUser();
              setUser(null);
              setError("Access Denied: You are not authorized to use this application.");
              return;
@@ -126,24 +127,13 @@ const App: React.FC = () => {
   // --- Handlers ---
 
   const handleLogin = async () => {
-    // Basic check before attempting
-    if (!process.env.VITE_FIREBASE_API_KEY) {
-       setError("Configuration Error: Firebase API Key is missing. Please check .env file.");
-       return;
-    }
-    
-    if (!auth || !googleProvider) {
-       setError("Authentication Service not initialized.");
-       return;
-    }
-
     try {
-      const result = await signInWithPopup(auth, googleProvider);
+      const result = await signInWithGoogle();
       const userEmail = result.user.email;
       
       // Whitelist Check
       if (ALLOWED_EMAILS.length > 0 && userEmail && !ALLOWED_EMAILS.includes(userEmail)) {
-        await signOut(auth);
+        await logoutUser();
         setError("Access Denied: Your email address is not authorized for this app. Please contact the administrator.");
         return;
       }
@@ -163,9 +153,8 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    if (!auth) return;
     try {
-      await signOut(auth);
+      await logoutUser();
       setUploadedImage(null);
       setGeneratedImages([]);
     } catch (e: any) {
@@ -192,11 +181,10 @@ const App: React.FC = () => {
   };
 
   const handleGenerate = async () => {
-    const isUserLoggedIn = !!user;
-    const canUseSystemKey = !isUserLoggedIn;
-    const hasValidKey = apiKey || (canUseSystemKey && process.env.API_KEY);
-
-    if (!hasValidKey) {
+    // STRICT REQUIREMENT: User must have their own API key.
+    // If no key is set for the current context (user or guest), open settings.
+    if (!apiKey) {
+      setError("Please enter your Gemini API Key in Settings to generate designs.");
       setShowSettings(true);
       return;
     }
@@ -226,7 +214,7 @@ const App: React.FC = () => {
     };
 
     try {
-      const results = await generateDesigns(apiKey, uploadedImage, config, canUseSystemKey);
+      const results = await generateDesigns(apiKey, uploadedImage, config);
       setGeneratedImages(results);
       setSelectedVariation(0);
       
@@ -257,11 +245,8 @@ const App: React.FC = () => {
   };
 
   const handleAnalyze = async () => {
-    const isUserLoggedIn = !!user;
-    const canUseSystemKey = !isUserLoggedIn;
-    const hasValidKey = apiKey || (canUseSystemKey && process.env.API_KEY);
-
-    if (!hasValidKey) {
+    if (!apiKey) {
+        setError("Please enter your Gemini API Key in Settings to use analysis.");
         setShowSettings(true);
         return;
     }
@@ -271,7 +256,7 @@ const App: React.FC = () => {
     setError(null); // Clear previous errors
     
     try {
-      const result = await analyzeDesign(apiKey, generatedImages[selectedVariation], marketContext, canUseSystemKey);
+      const result = await analyzeDesign(apiKey, generatedImages[selectedVariation], marketContext);
       setAnalysis(result);
     } catch (err: any) {
       setError(err.message || "Analysis failed. Please try again.");
@@ -418,6 +403,14 @@ const App: React.FC = () => {
             <Settings size={20} className="shrink-0" />
             {isSidebarOpen && <span className="text-sm truncate">Settings</span>}
           </button>
+          
+          {/* Error message inside sidebar for visibility */}
+          {error && isSidebarOpen && (
+            <div className="text-xs text-red-400 bg-red-900/20 p-2 rounded border border-red-900/50 mb-2">
+               {error}
+            </div>
+          )}
+
           {user ? (
             <div className="flex items-center gap-3 p-2 rounded-lg bg-slate-800/50 overflow-hidden">
               <img src={user.photoURL || ''} className="w-8 h-8 rounded-full shrink-0" alt="User" />
@@ -430,8 +423,11 @@ const App: React.FC = () => {
               {isSidebarOpen && <button onClick={handleLogout}><LogOut size={16} className="text-slate-500 hover:text-red-400 shrink-0" /></button>}
             </div>
           ) : (
-            <button onClick={handleLogin} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
-              <User size={16} /> {isSidebarOpen && "Sign In"}
+            <button 
+              onClick={handleLogin} 
+              className="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-transform text-white py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
+            >
+              <User size={16} /> {isSidebarOpen && "Sign In with Google"}
             </button>
           )}
         </div>
@@ -805,6 +801,7 @@ const App: React.FC = () => {
       <SettingsModal 
         isOpen={showSettings} 
         onClose={() => setShowSettings(false)} 
+        userId={user?.uid}
       />
 
     </main>

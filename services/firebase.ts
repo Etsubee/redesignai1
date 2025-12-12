@@ -1,15 +1,15 @@
 import * as firebaseApp from 'firebase/app';
 import * as firebaseAuth from 'firebase/auth';
 
-// Use process.env for Vite environment variables (polyfill provided in vite.config.ts)
+// User provided configuration
 const firebaseConfig = {
-  apiKey: process.env.VITE_FIREBASE_API_KEY,
-  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.VITE_FIREBASE_APP_ID,
-  measurementId: process.env.VITE_FIREBASE_MEASUREMENT_ID
+  apiKey: "AIzaSyCoxb4OdrLz2XWshHwlFJDBg991JgGVNxg",
+  authDomain: "redesignai-92b93.firebaseapp.com",
+  projectId: "redesignai-92b93",
+  storageBucket: "redesignai-92b93.firebasestorage.app",
+  messagingSenderId: "514926421002",
+  appId: "1:514926421002:web:23d8f96b177017c06a2bf3",
+  measurementId: "G-954JHDKE2R"
 };
 
 let app;
@@ -26,10 +26,29 @@ try {
     // @ts-ignore
     googleProvider = new firebaseAuth.GoogleAuthProvider();
   } else {
-    console.error("Firebase Configuration is missing variables. Check .env file.");
+    console.error("Firebase Configuration is missing variables.");
   }
 } catch (error) {
   console.error("Failed to initialize Firebase:", error);
 }
 
-export { auth, googleProvider };
+// Helper functions to avoid named import issues in App.tsx
+export const signInWithGoogle = async () => {
+  if (!auth || !googleProvider) throw new Error("Authentication service is not fully initialized.");
+  // @ts-ignore
+  return firebaseAuth.signInWithPopup(auth, googleProvider);
+};
+
+export const logoutUser = async () => {
+  if (!auth) return;
+  // @ts-ignore
+  return firebaseAuth.signOut(auth);
+};
+
+export const subscribeToAuthChanges = (callback: (user: any) => void) => {
+  if (!auth) return () => {};
+  // @ts-ignore
+  return firebaseAuth.onAuthStateChanged(auth, callback);
+};
+
+export { auth };

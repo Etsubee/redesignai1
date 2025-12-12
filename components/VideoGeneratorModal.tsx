@@ -28,7 +28,7 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
-    img.onerror = reject;
+    img.onerror = (e) => reject(new Error(`Failed to load image: ${src}`));
     img.src = src;
   });
 
@@ -113,7 +113,13 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-        if (recorder.state === 'recording') recorder.stop();
+        if (recorder.state === 'recording') {
+            recorder.stop();
+        } else {
+            // Safety fallback if something weird happened to state
+            console.warn("Recorder state not recording on finish:", recorder.state);
+            setIsProcessing(false);
+        }
       }
     };
     requestAnimationFrame(animate);
@@ -126,10 +132,9 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     loadedImages: HTMLImageElement[]
   ) => {
     // Faster Settings
-    const displayTime = 1000; // Reduced from 1500ms
-    const transitionTime = 500; // Reduced from 800ms
+    const displayTime = 1000; 
+    const transitionTime = 500; 
     const cycleTime = displayTime + transitionTime;
-    const totalDuration = loadedImages.length * cycleTime;
     
     const startTime = performance.now();
 
@@ -143,9 +148,14 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       
       // Stop condition
       if (totalCycleIndex >= loadedImages.length) {
-         // Stop slightly after the last image finishes to prevent abrupt cut
-         if (recorder.state === 'recording') recorder.stop();
-         return; // Exit loop
+         if (recorder.state === 'recording') {
+            recorder.stop();
+         } else {
+             // Safety fallback
+             console.warn("Recorder state not recording on finish:", recorder.state);
+             setIsProcessing(false);
+         }
+         return; 
       }
 
       const cycleProgress = (elapsed % cycleTime) / cycleTime; // 0 to 1
@@ -178,7 +188,11 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
 
       // Labels
       let label = "";
-      if (beforeImage) {
+      // If we have a before image, assume first image in reveal sequence logic, 
+      // but in showcase mode we usually just show variations. 
+      // Simplification: Just label strictly based on index
+      if (beforeImage && loadedImages.length > allVariations.length) {
+          // If loadedImages includes the original (which is prepended in showcase logic)
           if (currentImgIndex === 0 && !inTransition) label = "ORIGINAL";
           else if (currentImgIndex > 0) label = `VARIATION ${currentImgIndex}`;
       } else {
@@ -198,67 +212,99 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     setIsProcessing(true);
     setVideoUrl(null);
 
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // HD Resolution
-    canvas.width = 1280;
-    canvas.height = 720;
-
-    // Preload images
-    let images: HTMLImageElement[] = [];
     try {
-        if (mode === 'REVEAL') {
-            const [imgBefore, imgAfter] = await Promise.all([
-                loadImg(beforeImage), 
-                loadImg(afterImage)
-            ]);
-            images = [imgBefore, imgAfter];
-        } else {
-            // For showcase, include original if it exists
-            const imagesToLoad = beforeImage ? [beforeImage, ...allVariations] : allVariations;
-            // Limit to first 6 images to keep video short if too many
-            const subset = imagesToLoad.slice(0, 6);
-            images = await Promise.all(subset.map(src => loadImg(src)));
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error("Could not get canvas context");
+
+        // HD Resolution
+        canvas.width = 1280;
+        canvas.height = 720;
+
+        // Preload images
+        let images: HTMLImageElement[] = [];
+        try {
+            if (mode === 'REVEAL') {
+                const [imgBefore, imgAfter] = await Promise.all([
+                    loadImg(beforeImage), 
+                    loadImg(afterImage)
+                ]);
+                images = [imgBefore, imgAfter];
+            } else {
+                // For showcase, include original if it exists
+                const imagesToLoad = beforeImage ? [beforeImage, ...allVariations] : allVariations;
+                // Limit to first 6 images to keep video short
+                const subset = imagesToLoad.slice(0, 6);
+                if (subset.length === 0) throw new Error("No images available for slideshow");
+                images = await Promise.all(subset.map(src => loadImg(src)));
+            }
+        } catch (e) {
+            console.error("Image load failed", e);
+            throw new Error("Failed to load images. Please try again.");
         }
+
+        const stream = canvas.captureStream(30); // 30 FPS
+        
+        // Robust MimeType Selection
+        const supportedTypes = [
+            'video/webm;codecs=vp9',
+            'video/webm;codecs=vp8',
+            'video/webm',
+            'video/mp4'
+        ];
+        const mimeType = supportedTypes.find(type => MediaRecorder.isTypeSupported(type));
+        
+        if (!mimeType) {
+             console.warn("No supported mimeType found, relying on browser default.");
+        }
+
+        const options = mimeType ? { mimeType } : undefined;
+        let recorder: MediaRecorder;
+        
+        try {
+            recorder = new MediaRecorder(stream, options);
+        } catch (e) {
+            console.error("Failed to create MediaRecorder with options", options, e);
+            // Fallback to default options
+            recorder = new MediaRecorder(stream);
+        }
+
+        const chunks: Blob[] = [];
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) chunks.push(e.data);
+        };
+
+        recorder.onerror = (e) => {
+            console.error("Recorder Error:", e);
+            setIsProcessing(false);
+        };
+
+        recorder.onstop = () => {
+          try {
+              const type = mimeType || 'video/webm';
+              const blob = new Blob(chunks, { type });
+              const url = URL.createObjectURL(blob);
+              setVideoUrl(url);
+          } catch (e) {
+              console.error("Blob creation failed", e);
+          }
+          setIsProcessing(false);
+        };
+
+        // Start recording
+        recorder.start();
+
+        // Start drawing loop
+        if (mode === 'REVEAL') {
+          generateRevealVideo(ctx, canvas, recorder, images[0], images[1]);
+        } else {
+          generateShowcaseVideo(ctx, canvas, recorder, images);
+        }
+
     } catch (e) {
-        console.error("Failed to load images", e);
+        console.error("Video Generation Error:", e);
         setIsProcessing(false);
-        return;
-    }
-
-    const stream = canvas.captureStream(30); // 30 FPS
-    
-    // Attempt to use valid mime type
-    let mimeType = 'video/webm';
-    if (MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
-        mimeType = 'video/webm; codecs=vp9';
-    } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-        mimeType = 'video/mp4'; 
-    }
-
-    const recorder = new MediaRecorder(stream, { mimeType });
-    const chunks: Blob[] = [];
-
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
-
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      setVideoUrl(url);
-      setIsProcessing(false);
-    };
-
-    recorder.start();
-
-    // Start drawing loop
-    if (mode === 'REVEAL') {
-      generateRevealVideo(ctx, canvas, recorder, images[0], images[1]);
-    } else {
-      generateShowcaseVideo(ctx, canvas, recorder, images);
     }
   };
 

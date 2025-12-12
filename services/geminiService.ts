@@ -1,21 +1,19 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { DesignConfig, RealEstateAnalysis, DesignMode, GroundingSource } from "../types";
 
-// Helper to validate key existence with optional system fallback
-const requireKey = (key: string | null, allowSystemKey: boolean) => {
-  const effectiveKey = key || (allowSystemKey ? process.env.API_KEY : null);
-  if (!effectiveKey) throw new Error("API Key is missing. Please add it in Settings.");
-  return effectiveKey;
+// Helper to validate key existence
+const requireKey = (key: string | null) => {
+  if (!key) throw new Error("API Key is missing. Please add your personal Gemini API Key in Settings.");
+  return key;
 };
 
 // --- Image Generation Logic ---
 export const generateDesigns = async (
   apiKey: string | null,
   base64Image: string | null,
-  config: DesignConfig,
-  allowSystemKey: boolean = false
+  config: DesignConfig
 ): Promise<string[]> => {
-  const key = requireKey(apiKey, allowSystemKey);
+  const key = requireKey(apiKey);
   const ai = new GoogleGenAI({ apiKey: key });
 
   const isGenerateNew = config.isGenerateNew && !base64Image;
@@ -163,10 +161,9 @@ export const generateDesigns = async (
 export const analyzeDesign = async (
   apiKey: string | null,
   base64Image: string,
-  marketContext: 'Ethiopian' | 'International',
-  allowSystemKey: boolean = false
+  marketContext: 'Ethiopian' | 'International'
 ): Promise<RealEstateAnalysis> => {
-  const key = requireKey(apiKey, allowSystemKey);
+  const key = requireKey(apiKey);
   const ai = new GoogleGenAI({ apiKey: key });
 
   const cleanBase64 = base64Image.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '');

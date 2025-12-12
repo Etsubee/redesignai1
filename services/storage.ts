@@ -6,21 +6,31 @@ const KEYS = {
   USER_TIER: 'redesign_ai_user_tier'
 };
 
-export const getApiKey = (): string | null => {
+export const getApiKey = (uid?: string | null): string | null => {
+  if (uid) {
+    return localStorage.getItem(`${KEYS.API_KEY}_${uid}`);
+  }
   return localStorage.getItem(KEYS.API_KEY);
 };
 
-export const setApiKey = (key: string) => {
-  localStorage.setItem(KEYS.API_KEY, key);
+export const setApiKey = (key: string, uid?: string | null) => {
+  if (uid) {
+    localStorage.setItem(`${KEYS.API_KEY}_${uid}`, key);
+  } else {
+    localStorage.setItem(KEYS.API_KEY, key);
+  }
 };
 
-export const removeApiKey = () => {
-  localStorage.removeItem(KEYS.API_KEY);
+export const removeApiKey = (uid?: string | null) => {
+  if (uid) {
+    localStorage.removeItem(`${KEYS.API_KEY}_${uid}`);
+  } else {
+    localStorage.removeItem(KEYS.API_KEY);
+  }
 };
 
 export const saveProject = (project: Project) => {
   const projects = getProjects();
-  // Removed artificial limit. Browser quota will still apply.
   projects.unshift(project);
   
   try {
