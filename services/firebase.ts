@@ -40,8 +40,21 @@ try {
 // Helper functions to avoid named import issues in App.tsx
 export const signInWithGoogle = async () => {
   if (!auth || !googleProvider) throw new Error("Authentication service is not fully initialized.");
-  // @ts-ignore
-  return firebaseAuth.signInWithPopup(auth, googleProvider);
+  
+  // Check for Mobile (Android/iOS) to avoid "disallowed_useragent" in embedded webviews (Swing2App, etc)
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+  if (isMobile) {
+      // Use Redirect for mobile to support WebView wrappers
+      // @ts-ignore
+      await firebaseAuth.signInWithRedirect(auth, googleProvider);
+      // Return null to indicate redirection is in progress (page will unload)
+      return null;
+  } else {
+      // Use Popup for Desktop (better UX for desktop users)
+      // @ts-ignore
+      return firebaseAuth.signInWithPopup(auth, googleProvider);
+  }
 };
 
 export const logoutUser = async () => {

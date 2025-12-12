@@ -129,6 +129,12 @@ const App: React.FC = () => {
   const handleLogin = async () => {
     try {
       const result = await signInWithGoogle();
+      
+      // If result is null, it means we are redirecting (Mobile/WebView flow)
+      // The actual login completion will happen after page reload in the auth listener
+      if (!result) return;
+
+      // Desktop Popup Flow continues here
       const userEmail = result.user.email;
       
       // Whitelist Check
