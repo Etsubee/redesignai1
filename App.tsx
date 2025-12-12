@@ -144,6 +144,8 @@ const App: React.FC = () => {
       // Handle Firebase errors loosely to avoid type issues
       if (e.code === 'auth/configuration-not-found' || e.code === 'auth/api-key-not-valid') {
          setError("Authentication Configuration Error. Please verify your .env settings.");
+      } else if (e.code === 'auth/unauthorized-domain') {
+         setError("Domain not authorized. Go to Firebase Console > Authentication > Settings > Authorized Domains and add this website URL.");
       } else if (e.code === 'auth/popup-closed-by-user') {
          setError(null); // Ignore
       } else {
@@ -412,15 +414,24 @@ const App: React.FC = () => {
           )}
 
           {user ? (
-            <div className="flex items-center gap-3 p-2 rounded-lg bg-slate-800/50 overflow-hidden">
-              <img src={user.photoURL || ''} className="w-8 h-8 rounded-full shrink-0" alt="User" />
-              {isSidebarOpen && (
-                <div className="flex-1 overflow-hidden">
-                  <p className="text-sm font-medium text-white truncate">{user.displayName}</p>
-                  <p className="text-xs text-indigo-400 truncate">{user.tier}</p>
-                </div>
-              )}
-              {isSidebarOpen && <button onClick={handleLogout}><LogOut size={16} className="text-slate-500 hover:text-red-400 shrink-0" /></button>}
+            <div className="space-y-2">
+              <div className={`flex items-center gap-3 p-2 rounded-lg bg-slate-800/50 overflow-hidden ${!isSidebarOpen ? 'justify-center' : ''}`}>
+                <img src={user.photoURL || ''} className="w-8 h-8 rounded-full shrink-0" alt="User" />
+                {isSidebarOpen && (
+                  <div className="flex-1 overflow-hidden">
+                    <p className="text-sm font-medium text-white truncate">{user.displayName}</p>
+                    <p className="text-xs text-indigo-400 truncate">{user.tier}</p>
+                  </div>
+                )}
+              </div>
+              <button 
+                onClick={handleLogout} 
+                className={`flex items-center gap-3 text-slate-400 hover:text-red-400 w-full p-2 rounded-lg hover:bg-slate-800 border border-transparent hover:border-red-900/30 transition-all ${!isSidebarOpen ? 'justify-center' : ''}`} 
+                title="Sign Out"
+              >
+                <LogOut size={20} className="shrink-0" />
+                {isSidebarOpen && <span className="text-sm font-medium truncate">Sign Out</span>}
+              </button>
             </div>
           ) : (
             <button 

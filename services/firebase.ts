@@ -25,6 +25,11 @@ try {
     auth = firebaseAuth.getAuth(app);
     // @ts-ignore
     googleProvider = new firebaseAuth.GoogleAuthProvider();
+    // Force account selection prompt every time user clicks login
+    // @ts-ignore
+    googleProvider.setCustomParameters({
+      prompt: 'select_account'
+    });
   } else {
     console.error("Firebase Configuration is missing variables.");
   }
