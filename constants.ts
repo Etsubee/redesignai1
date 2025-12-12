@@ -3,6 +3,14 @@ import { LayoutDashboard, Trees, PencilRuler, FileText, Box, HardHat, Building, 
 
 export const APP_NAME = "Redesign Ai";
 
+// --- SECURITY CONFIGURATION ---
+// Add specific Gmail addresses here to restrict access. 
+// If this array is empty [], ANYONE with a Google account can log in.
+// Example: ['myemail@gmail.com', 'admin@redesignai.com']
+export const ALLOWED_EMAILS: string[] = [
+  // "your-email@gmail.com", 
+];
+
 export const ROOM_TYPES = [
   'Living Room', 'Bedroom', 'Kitchen', 'Office', 'Bathroom', 'Dining Room', 
   'Study', 'Home Gym', 'Kids Room', 'Walk-in Closet', 'Gaming Room'

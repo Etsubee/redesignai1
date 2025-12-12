@@ -8,7 +8,7 @@ import {
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 import { DesignMode, DesignConfig, Project, UserProfile, UserTier, BlueprintParams } from './types';
-import { MODE_CONFIG, DEFAULT_PROMPTS, APP_NAME, ROOM_TYPES } from './constants';
+import { MODE_CONFIG, DEFAULT_PROMPTS, APP_NAME, ROOM_TYPES, ALLOWED_EMAILS } from './constants';
 import { getApiKey, saveProject, getProjects, deleteProject, getUserTier } from './services/storage';
 import { generateDesigns, analyzeDesign } from './services/geminiService';
 import { exportToHTML, exportToPDF } from './services/exportService';
@@ -93,8 +93,21 @@ const App: React.FC = () => {
 
   // Auth Listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    if (!auth) {
+      setError("Firebase Initialization Failed. Please check console for configuration errors.");
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
+        // Double check on persistence load as well
+        if (ALLOWED_EMAILS.length > 0 && currentUser.email && !ALLOWED_EMAILS.includes(currentUser.email)) {
+             await signOut(auth);
+             setUser(null);
+             setError("Access Denied: You are not authorized to use this application.");
+             return;
+        }
+
         setUser({
           uid: currentUser.uid,
           displayName: currentUser.displayName,
@@ -102,6 +115,7 @@ const App: React.FC = () => {
           photoURL: currentUser.photoURL,
           tier: getUserTier() // Retrieve tier from local storage for now
         });
+        setError(null);
       } else {
         setUser(null);
       }
@@ -112,15 +126,44 @@ const App: React.FC = () => {
   // --- Handlers ---
 
   const handleLogin = async () => {
+    // Basic check before attempting
+    if (!process.env.VITE_FIREBASE_API_KEY) {
+       setError("Configuration Error: Firebase API Key is missing. Please check .env file.");
+       return;
+    }
+    
+    if (!auth || !googleProvider) {
+       setError("Authentication Service not initialized.");
+       return;
+    }
+
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      const userEmail = result.user.email;
+      
+      // Whitelist Check
+      if (ALLOWED_EMAILS.length > 0 && userEmail && !ALLOWED_EMAILS.includes(userEmail)) {
+        await signOut(auth);
+        setError("Access Denied: Your email address is not authorized for this app. Please contact the administrator.");
+        return;
+      }
+
+      setError(null);
     } catch (e: any) {
       console.error("Login Error:", e);
-      setError("Login failed. Please check your network connection.");
+      // Handle Firebase errors loosely to avoid type issues
+      if (e.code === 'auth/configuration-not-found' || e.code === 'auth/api-key-not-valid') {
+         setError("Authentication Configuration Error. Please verify your .env settings.");
+      } else if (e.code === 'auth/popup-closed-by-user') {
+         setError(null); // Ignore
+      } else {
+         setError("Login failed: " + (e.message || "Unknown error"));
+      }
     }
   };
 
   const handleLogout = async () => {
+    if (!auth) return;
     try {
       await signOut(auth);
       setUploadedImage(null);
@@ -162,10 +205,13 @@ const App: React.FC = () => {
       return;
     }
 
+    // --- CLEAR OLD DATA ---
+    setGeneratedImages([]); // Immediately clear old images to show loading state
+    setAnalysis(null);
+    setError(null);
+    
     setIsGenerating(true);
     setLoadingText("Designing...");
-    setError(null);
-    setAnalysis(null);
 
     const config: DesignConfig = {
       mode: currentMode,

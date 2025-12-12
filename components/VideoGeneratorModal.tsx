@@ -85,8 +85,6 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       ctx.beginPath();
       
       // Reveal: Slider moves from Right (Full Width) to Left (0 Width)
-      // Actually standard sliders usually start at 50% or 100%. 
-      // Let's animate from Full Before (width=canvas.width) to Full After (width=0)
       const revealWidth = canvas.width - sliderPos; 
       
       ctx.rect(0, 0, revealWidth, canvas.height);
@@ -127,9 +125,9 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     recorder: MediaRecorder,
     loadedImages: HTMLImageElement[]
   ) => {
-    // Config
-    const displayTime = 1500; // Time to show image static (Reduced for speed)
-    const transitionTime = 800; // Crossfade time (Reduced for speed)
+    // Faster Settings
+    const displayTime = 1000; // Reduced from 1500ms
+    const transitionTime = 500; // Reduced from 800ms
     const cycleTime = displayTime + transitionTime;
     const totalDuration = loadedImages.length * cycleTime;
     
@@ -145,11 +143,9 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       
       // Stop condition
       if (totalCycleIndex >= loadedImages.length) {
-         // Hold last frame briefly then stop
-         if (elapsed > totalDuration + 200) {
-             if (recorder.state === 'recording') recorder.stop();
-             return;
-         }
+         // Stop slightly after the last image finishes to prevent abrupt cut
+         if (recorder.state === 'recording') recorder.stop();
+         return; // Exit loop
       }
 
       const cycleProgress = (elapsed % cycleTime) / cycleTime; // 0 to 1
@@ -182,12 +178,10 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
 
       // Labels
       let label = "";
-      // If we have a before image, index 0 is Original, others are variations
       if (beforeImage) {
           if (currentImgIndex === 0 && !inTransition) label = "ORIGINAL";
           else if (currentImgIndex > 0) label = `VARIATION ${currentImgIndex}`;
       } else {
-          // If no before image (e.g. blueprint generation), just number variations
           label = `VARIATION ${currentImgIndex + 1}`;
       }
       
@@ -212,7 +206,7 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     canvas.width = 1280;
     canvas.height = 720;
 
-    // Preload images BEFORE starting recorder to avoid dead frames
+    // Preload images
     let images: HTMLImageElement[] = [];
     try {
         if (mode === 'REVEAL') {
@@ -222,8 +216,11 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
             ]);
             images = [imgBefore, imgAfter];
         } else {
+            // For showcase, include original if it exists
             const imagesToLoad = beforeImage ? [beforeImage, ...allVariations] : allVariations;
-            images = await Promise.all(imagesToLoad.map(src => loadImg(src)));
+            // Limit to first 6 images to keep video short if too many
+            const subset = imagesToLoad.slice(0, 6);
+            images = await Promise.all(subset.map(src => loadImg(src)));
         }
     } catch (e) {
         console.error("Failed to load images", e);
@@ -238,7 +235,7 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     if (MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
         mimeType = 'video/webm; codecs=vp9';
     } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-        mimeType = 'video/mp4'; // Safari fallback often
+        mimeType = 'video/mp4'; 
     }
 
     const recorder = new MediaRecorder(stream, { mimeType });
@@ -307,7 +304,7 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
         {/* Actions */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
           <p className="text-xs text-slate-500 text-center sm:text-left">
-            {mode === 'REVEAL' ? 'Generates a 4s before/after sliding reveal.' : `Generates a slideshow of all ${allVariations.length} variations.`}
+            {mode === 'REVEAL' ? 'Generates a 4s before/after sliding reveal.' : `Generates a slideshow of all variations.`}
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
