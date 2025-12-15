@@ -40,7 +40,35 @@ export const generateDesigns = async (
   }
 
   if (config.mode === DesignMode.UNDER_CONSTRUCTION) {
-    prompt += " The provided image shows a construction site, unfinished frame, or renovation in progress. Your goal is to visualize the FULLY FINISHED, COMPLETED result. Hide all construction materials, scaffolding, debris, and equipment. Show clean, finished surfaces, completed flooring/walls, and a habitable environment ready for use.";
+    prompt += `
+      INPUT CONTEXT: High-rise construction site with exposed concrete grid.
+      
+      EXTREME PRIORITY INSTRUCTION: FORCE FULL FACADE COMPLETION.
+      
+      The AI often misses windows on random floors. YOU MUST NOT DO THIS.
+      
+      EXECUTION STEPS:
+      1. IDENTIFY THE GRID: The building is a matrix of floors and columns.
+      2. APPLY TEXTURE TO ALL CELLS: Apply the "Finished Window" texture to EVERY cell in this matrix.
+      3. OVERWRITE VOIDS: Any dark, empty space within the building frame is strictly prohibited. You must paint over the dark voids with glass.
+      4. PATTERN CONTINUITY: If floor 5 has windows, floor 6, 7, 8... up to the roof MUST have identical windows. Do not stop until the building is full.
+      5. GLASS CURTAIN WALL: If individual windows are failing, apply a full glass curtain wall facade that covers the entire structural skeleton.
+      
+      RESULT: A sleek, 100% completed skyscraper with NO missing glazing.
+    `;
+  }
+
+  // --- Panorama Handling ---
+  if (config.isPanorama) {
+    prompt += `
+      INPUT IMAGE SPECIFICATION: The user has provided an Equirectangular Panorama (360° view).
+      OUTPUT REQUIREMENT:
+      1. Generate a SEAMLESS equirectangular projection (2:1 aspect ratio).
+      2. Ensure the left and right edges of the image match perfectly to allow 360 navigation without a visible seam.
+      3. Do not distort the horizon line.
+      4. Treat the image as a continuous sphere, not a flat photo.
+      5. Maintain the 360-degree perspective throughout the transformation.
+    `;
   }
 
   prompt += ` User Instructions: ${config.prompt}.`;

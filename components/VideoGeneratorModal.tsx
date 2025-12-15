@@ -24,10 +24,28 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     setVideoUrl(null);
   }, [mode, beforeImage, afterImage, allVariations]);
 
-  const loadImg = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+  // Optimized: Load and Pre-scale image to target resolution
+  // This prevents the canvas from having to resize 4k images 60 times a second during recording.
+  const loadAndProcessImg = (src: string, targetW: number, targetH: number) => new Promise<HTMLCanvasElement>((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
+    img.onload = () => {
+        // Create an offscreen canvas for the resized image
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = targetW;
+        offCanvas.height = targetH;
+        const ctx = offCanvas.getContext('2d');
+        if (!ctx) {
+            reject(new Error("Failed to get offscreen context"));
+            return;
+        }
+
+        // Draw image "cover" style (mimic object-fit: cover)
+        // or just stretch to fit (current behavior). Keeping stretch for consistency with UI.
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        
+        resolve(offCanvas);
+    };
     img.onerror = (e) => reject(new Error(`Failed to load image: ${src}`));
     img.src = src;
   });
@@ -47,12 +65,12 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
 
   const drawWatermark = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
     ctx.save();
-    ctx.font = 'bold 28px Inter, sans-serif';
+    ctx.font = 'bold 32px Inter, sans-serif'; // Slightly larger for 2K
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
     ctx.shadowBlur = 4;
     ctx.textAlign = 'right';
-    ctx.fillText("Redesign Ai", w - 30, h - 30);
+    ctx.fillText("Redesign Ai", w - 40, h - 40);
     ctx.restore();
   };
 
@@ -60,8 +78,8 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     ctx: CanvasRenderingContext2D, 
     canvas: HTMLCanvasElement, 
     recorder: MediaRecorder,
-    imgBefore: HTMLImageElement,
-    imgAfter: HTMLImageElement
+    imgBefore: HTMLCanvasElement, // Using Canvas elements now (pre-rendered)
+    imgAfter: HTMLCanvasElement
   ) => {
     const duration = 4000; // 4s
     const startTime = performance.now();
@@ -75,10 +93,10 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       const sliderPos = ease(progress) * canvas.width;
 
       // 1. Draw Background (AFTER)
-      ctx.drawImage(imgAfter, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(imgAfter, 0, 0);
       
       // Label: AFTER (Top Right)
-      drawLabel(ctx, "AFTER", canvas.width - 40, 60, 'right');
+      drawLabel(ctx, "AFTER", canvas.width - 60, 80, 'right', 36);
 
       // 2. Draw Foreground (BEFORE) - Clipped
       ctx.save();
@@ -90,10 +108,10 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       ctx.rect(0, 0, revealWidth, canvas.height);
       ctx.clip();
       
-      ctx.drawImage(imgBefore, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(imgBefore, 0, 0);
       
       // Label: BEFORE (Top Left)
-      drawLabel(ctx, "BEFORE", 40, 60, 'left');
+      drawLabel(ctx, "BEFORE", 60, 80, 'left', 36);
       
       ctx.restore();
 
@@ -101,7 +119,7 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       ctx.beginPath();
       ctx.moveTo(revealWidth, 0);
       ctx.lineTo(revealWidth, canvas.height);
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 6; // Thicker line for 2K
       ctx.strokeStyle = '#ffffff';
       ctx.shadowColor = 'black';
       ctx.shadowBlur = 10;
@@ -116,7 +134,6 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
         if (recorder.state === 'recording') {
             recorder.stop();
         } else {
-            // Safety fallback if something weird happened to state
             console.warn("Recorder state not recording on finish:", recorder.state);
             setIsProcessing(false);
         }
@@ -129,10 +146,10 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     ctx: CanvasRenderingContext2D, 
     canvas: HTMLCanvasElement, 
     recorder: MediaRecorder,
-    loadedImages: HTMLImageElement[]
+    loadedImages: HTMLCanvasElement[]
   ) => {
-    // Faster Settings
-    const displayTime = 1000; 
+    // 2 Seconds Total Per Slide (1.5s Static + 0.5s Transition)
+    const displayTime = 1500; 
     const transitionTime = 500; 
     const cycleTime = displayTime + transitionTime;
     
@@ -151,8 +168,6 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
          if (recorder.state === 'recording') {
             recorder.stop();
          } else {
-             // Safety fallback
-             console.warn("Recorder state not recording on finish:", recorder.state);
              setIsProcessing(false);
          }
          return; 
@@ -172,34 +187,30 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
       // Draw Logic
       if (!inTransition) {
         // Static Phase
-        ctx.drawImage(currentImg, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(currentImg, 0, 0);
       } else {
         // Transition Phase (Crossfade)
         const transitionProgress = (elapsed % cycleTime - displayTime) / transitionTime; // 0 to 1
         
         ctx.globalAlpha = 1;
-        ctx.drawImage(currentImg, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(currentImg, 0, 0);
         
         ctx.globalAlpha = transitionProgress;
-        ctx.drawImage(nextImg, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(nextImg, 0, 0);
         
         ctx.globalAlpha = 1; // Reset
       }
 
       // Labels
       let label = "";
-      // If we have a before image, assume first image in reveal sequence logic, 
-      // but in showcase mode we usually just show variations. 
-      // Simplification: Just label strictly based on index
       if (beforeImage && loadedImages.length > allVariations.length) {
-          // If loadedImages includes the original (which is prepended in showcase logic)
           if (currentImgIndex === 0 && !inTransition) label = "ORIGINAL";
           else if (currentImgIndex > 0) label = `VARIATION ${currentImgIndex}`;
       } else {
           label = `VARIATION ${currentImgIndex + 1}`;
       }
       
-      if (label) drawLabel(ctx, label, 40, 60, 'left');
+      if (label) drawLabel(ctx, label, 60, 80, 'left', 36); // Larger font
       drawWatermark(ctx, canvas.width, canvas.height);
 
       requestAnimationFrame(animate);
@@ -212,38 +223,42 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     setIsProcessing(true);
     setVideoUrl(null);
 
+    // Target Resolution: 2K QHD (2560 x 1440)
+    const WIDTH = 2560;
+    const HEIGHT = 1440;
+
     try {
         const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false }); // Alpha false for slight perf boost
         if (!ctx) throw new Error("Could not get canvas context");
 
-        // HD Resolution
-        canvas.width = 1280;
-        canvas.height = 720;
+        canvas.width = WIDTH;
+        canvas.height = HEIGHT;
 
-        // Preload images
-        let images: HTMLImageElement[] = [];
+        // Preload and PROCESS images into Bitmaps/Canvases
+        let images: HTMLCanvasElement[] = [];
         try {
             if (mode === 'REVEAL') {
                 const [imgBefore, imgAfter] = await Promise.all([
-                    loadImg(beforeImage), 
-                    loadImg(afterImage)
+                    loadAndProcessImg(beforeImage, WIDTH, HEIGHT), 
+                    loadAndProcessImg(afterImage, WIDTH, HEIGHT)
                 ]);
                 images = [imgBefore, imgAfter];
             } else {
                 // For showcase, include original if it exists
                 const imagesToLoad = beforeImage ? [beforeImage, ...allVariations] : allVariations;
-                // Limit to first 6 images to keep video short
-                const subset = imagesToLoad.slice(0, 6);
+                // Limit to first 10 images (increased from 8)
+                const subset = imagesToLoad.slice(0, 10);
                 if (subset.length === 0) throw new Error("No images available for slideshow");
-                images = await Promise.all(subset.map(src => loadImg(src)));
+                images = await Promise.all(subset.map(src => loadAndProcessImg(src, WIDTH, HEIGHT)));
             }
         } catch (e) {
             console.error("Image load failed", e);
             throw new Error("Failed to load images. Please try again.");
         }
 
-        const stream = canvas.captureStream(30); // 30 FPS
+        // 24 FPS is standard for cinematic video and helps performance at 2K resolution
+        const stream = canvas.captureStream(24); 
         
         // Robust MimeType Selection
         const supportedTypes = [
@@ -254,18 +269,16 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
         ];
         const mimeType = supportedTypes.find(type => MediaRecorder.isTypeSupported(type));
         
-        if (!mimeType) {
-             console.warn("No supported mimeType found, relying on browser default.");
-        }
+        const options = mimeType ? { 
+            mimeType,
+            videoBitsPerSecond: 8000000 // 8 Mbps for 2K quality
+        } : undefined;
 
-        const options = mimeType ? { mimeType } : undefined;
         let recorder: MediaRecorder;
-        
         try {
             recorder = new MediaRecorder(stream, options);
         } catch (e) {
             console.error("Failed to create MediaRecorder with options", options, e);
-            // Fallback to default options
             recorder = new MediaRecorder(stream);
         }
 
@@ -314,7 +327,7 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
       <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 md:p-6 w-full max-w-3xl flex flex-col max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6 shrink-0">
-          <h3 className="text-xl font-bold text-white">Cinematic Video Generator</h3>
+          <h3 className="text-xl font-bold text-white">Cinematic Video Generator (2K)</h3>
           <button onClick={onClose}><X className="w-5 h-5 text-slate-400 hover:text-white" /></button>
         </div>
 
@@ -350,7 +363,7 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({
         {/* Actions */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
           <p className="text-xs text-slate-500 text-center sm:text-left">
-            {mode === 'REVEAL' ? 'Generates a 4s before/after sliding reveal.' : `Generates a slideshow of all variations.`}
+            {mode === 'REVEAL' ? 'Generates a 4s before/after sliding reveal.' : `Generates a high-quality 2K slideshow (2s per image).`}
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">

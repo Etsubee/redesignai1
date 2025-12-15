@@ -3,7 +3,7 @@ import {
   Menu, Upload, Image as ImageIcon, Layers, Zap, Clock, Settings, 
   LogOut, User, Check, AlertCircle, Loader2, Download, Video, 
   ChevronRight, ChevronLeft, Maximize2, Plus, Minus, Globe, ExternalLink,
-  Rotate3D, ScanEye, FileCode, FileText
+  Rotate3D, ScanEye, FileCode, FileText, X
 } from 'lucide-react';
 
 import { DesignMode, DesignConfig, Project, UserProfile, UserTier, BlueprintParams } from './types';
@@ -28,6 +28,7 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [isFullscreenPreview, setIsFullscreenPreview] = useState(false);
 
   // Design State
   const [currentMode, setCurrentMode] = useState<DesignMode>(DesignMode.INTERIOR);
@@ -175,12 +176,27 @@ const App: React.FC = () => {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setUploadedImage(reader.result as string);
+        const result = reader.result as string;
+        setUploadedImage(result);
         setGeneratedImages([]); // Clear previous results
         setAnalysis(null);
         setIsResultPanorama(false); // Reset on new upload
         setIsResultStereo(false);
         setIs360Active(false);
+
+        // Auto-detect Panorama Aspect Ratio (Approx 2:1)
+        const img = new Image();
+        img.onload = () => {
+          const ratio = img.width / img.height;
+          // Standard Equirectangular is 2:1. Allow variance 1.8 - 2.2
+          if (ratio >= 1.8 && ratio <= 2.2) {
+             setIsPanorama(true);
+          } else {
+             setIsPanorama(false);
+          }
+        };
+        img.src = result;
+
         // If uploading in blueprint mode, ensure we aren't in "New" mode
         if (currentMode === DesignMode.BLUEPRINT) setIsBlueprintNew(false);
       };
@@ -229,7 +245,7 @@ const App: React.FC = () => {
       // Update Visualization State
       setIsResultPanorama(config.isPanorama);
       setIsResultStereo(config.isStereo3D);
-      setIs360Active(config.isPanorama);
+      setIs360Active(config.isPanorama); // Auto-activate 360 view if pano generated
 
       // Auto-save
       const project: Project = {
@@ -641,9 +657,9 @@ const App: React.FC = () => {
         <div className="lg:col-span-9 flex flex-col gap-6 h-auto lg:h-full order-1 lg:order-2">
           
           {/* Main Viewer */}
-          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden relative shadow-2xl flex flex-col aspect-[4/3] lg:aspect-auto lg:flex-1">
+          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden relative shadow-2xl flex flex-col aspect-[4/3] lg:aspect-auto lg:flex-1 group">
             
-            {/* Viewer Header / 360 Toggle */}
+            {/* Viewer Header / 360 Toggle (For Result) */}
             {isResultPanorama && generatedImages.length > 0 && (
               <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 flex bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full p-1 shadow-xl w-max">
                  <button 
@@ -659,6 +675,17 @@ const App: React.FC = () => {
                    <Rotate3D size={14} /> 360°
                  </button>
               </div>
+            )}
+
+            {/* Maximize Button for Standard/Comparison Views */}
+            {generatedImages.length > 0 && !isResultPanorama && !isResultStereo && (
+              <button
+                onClick={() => setIsFullscreenPreview(true)}
+                className="absolute top-4 right-4 z-20 p-2 bg-black/50 hover:bg-black/80 text-white rounded-lg backdrop-blur-sm border border-white/10 transition-all opacity-0 group-hover:opacity-100 shadow-xl"
+                title="Fullscreen Preview"
+              >
+                <Maximize2 size={20} />
+              </button>
             )}
 
             <div className="flex-1 relative w-full h-full">
@@ -680,8 +707,31 @@ const App: React.FC = () => {
                    className="w-full h-full object-contain"
                 />
               ) : uploadedImage ? (
-                 <div className="w-full h-full flex items-center justify-center bg-slate-900">
-                    <img src={uploadedImage} className="max-h-full max-w-full object-contain opacity-50" />
+                 <div className="w-full h-full flex items-center justify-center bg-slate-900 relative">
+                    {/* Input Image 360 Toggle (If configured as Panorama) */}
+                    {isPanorama && (
+                      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 flex bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full p-1 shadow-xl w-max">
+                         <button 
+                           onClick={() => setIs360Active(false)}
+                           className={`flex items-center gap-2 px-3 lg:px-4 py-1.5 rounded-full text-xs font-bold transition-all ${!is360Active ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                         >
+                           <ScanEye size={14} /> Flat
+                         </button>
+                         <button 
+                           onClick={() => setIs360Active(true)}
+                           className={`flex items-center gap-2 px-3 lg:px-4 py-1.5 rounded-full text-xs font-bold transition-all ${is360Active ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                         >
+                           <Rotate3D size={14} /> 360°
+                         </button>
+                      </div>
+                    )}
+                    
+                    {isPanorama && is360Active ? (
+                        <PannellumViewer image={uploadedImage} />
+                    ) : (
+                        <img src={uploadedImage} className="max-h-full max-w-full object-contain opacity-50" />
+                    )}
+
                     {isGenerating && (
                       <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center backdrop-blur-sm z-30">
                         <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
@@ -820,6 +870,24 @@ const App: React.FC = () => {
         onClose={() => setShowSettings(false)} 
         userId={user?.uid}
       />
+      
+      {/* Fullscreen Image Preview Modal */}
+      {isFullscreenPreview && generatedImages[selectedVariation] && (
+        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setIsFullscreenPreview(false)}>
+           <button 
+              onClick={() => setIsFullscreenPreview(false)}
+              className="absolute top-4 right-4 p-2 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors z-50"
+           >
+              <X size={32} />
+           </button>
+           <img 
+              src={generatedImages[selectedVariation]} 
+              className="max-w-full max-h-full object-contain shadow-2xl" 
+              alt="Fullscreen Preview"
+              onClick={(e) => e.stopPropagation()} 
+           />
+        </div>
+      )}
 
     </main>
   );

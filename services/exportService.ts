@@ -28,7 +28,7 @@ export const exportToHTML = (
     header { border-bottom: 1px solid #334155; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; }
     h1 { margin: 0; color: #f8fafc; font-size: 24px; }
     .date { color: #94a3b8; font-size: 14px; }
-    .card { background: #1e293b; padding: 20px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); margin-bottom: 30px; border: 1px solid #334155; }
+    .card { background: #1e293b; padding: 20px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); margin-bottom: 30px; border: 1px solid #334155; position: relative; }
     .variation-title { font-size: 14px; font-weight: bold; color: #818cf8; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
     .section-title { font-size: 18px; font-weight: 600; color: #e2e8f0; margin-top: 30px; margin-bottom: 15px; border-left: 4px solid #6366f1; padding-left: 10px; }
     
@@ -107,12 +107,75 @@ export const exportToHTML = (
         pointer-events: none; /* Let clicks pass to slider */
     }
 
+    /* Lightbox Styles */
+    .lightbox {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.95);
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+    .lightbox.active {
+        display: flex;
+        opacity: 1;
+    }
+    .lightbox img {
+        max-width: 95%;
+        max-height: 95%;
+        object-fit: contain;
+        box-shadow: 0 0 30px rgba(0,0,0,0.5);
+    }
+    .lightbox-close {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        color: white;
+        font-size: 30px;
+        background: rgba(255,255,255,0.1);
+        border: none;
+        border-radius: 50%;
+        width: 44px;
+        height: 44px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .expand-btn {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 36px;
+        height: 36px;
+        background: rgba(0,0,0,0.7);
+        color: white;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 10;
+        border: 1px solid rgba(255,255,255,0.2);
+        transition: background 0.2s;
+    }
+    .expand-btn:hover {
+        background: rgba(0,0,0,0.9);
+    }
+
     /* Print styles */
     @media print { 
         body { padding: 0; max-width: 100%; background: white; color: black; } 
         .card, .info-item, .analysis-box { background: white; border: 1px solid #ccc; color: black; box-shadow: none; }
         .no-print { display: none; }
         h1, h2, h3, h4, p, td, th { color: black !important; }
+        .expand-btn { display: none; }
     }
     @media screen and (max-width: 600px) {
         body { padding: 15px; }
@@ -120,9 +183,10 @@ export const exportToHTML = (
     }
   `;
 
-  // JS for Slider Mechanics
+  // JS for Slider Mechanics and Lightbox
   const script = `
     document.addEventListener('DOMContentLoaded', () => {
+        // --- Slider Logic ---
         let activeSlider = null;
         let activeHandle = null;
         let activeBeforeContainer = null;
@@ -185,6 +249,43 @@ export const exportToHTML = (
         window.addEventListener('touchend', onEnd);
         window.addEventListener('mousemove', onMove);
         window.addEventListener('touchmove', onMove, { passive: false });
+
+        // --- Lightbox Logic ---
+        const lightbox = document.createElement('div');
+        lightbox.className = 'lightbox';
+        lightbox.innerHTML = '<button class="lightbox-close">&times;</button><img src="" alt="Full Screen">';
+        document.body.appendChild(lightbox);
+
+        const lightboxImg = lightbox.querySelector('img');
+        const closeBtn = lightbox.querySelector('.lightbox-close');
+
+        const closeLightbox = () => { lightbox.classList.remove('active'); };
+        closeBtn.addEventListener('click', closeLightbox);
+        lightbox.addEventListener('click', (e) => {
+            if(e.target === lightbox) closeLightbox();
+        });
+
+        // Add expand buttons to cards
+        document.querySelectorAll('.card').forEach(card => {
+            // Find the generated image (either .after-image in slider or direct img)
+            const img = card.querySelector('.after-image') || card.querySelector('img');
+            
+            if(img && !img.closest('.before-container')) { // Ensure we target the main image, not the clipped before image
+                const btn = document.createElement('div');
+                btn.className = 'expand-btn';
+                btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+                btn.title = "Maximize View";
+                
+                // Append to container. If slider, append to wrapper, else to card.
+                const container = card.querySelector('.comparison-slider') || card;
+                container.appendChild(btn);
+
+                btn.addEventListener('click', () => {
+                    lightboxImg.src = img.src;
+                    lightbox.classList.add('active');
+                });
+            }
+        });
     });
   `;
 
@@ -288,7 +389,7 @@ export const exportToHTML = (
         Generated by ${APP_NAME} &bull; Offline Compatible Export
     </div>
 
-    ${beforeImage ? `<script>${script}</script>` : ''}
+    <script>${script}</script>
 </body>
 </html>
   `;
