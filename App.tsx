@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  Menu, Upload, Image as ImageIcon, Layers, Zap, Clock, Settings, 
+  Menu, Upload, Image as ImageIcon, Layers, Zap, Settings, 
   LogOut, User, Check, AlertCircle, Loader2, Download, Video, 
   ChevronRight, ChevronLeft, Maximize2, Plus, Minus, Globe, ExternalLink,
   Rotate3D, ScanEye, FileCode, FileText, X
@@ -8,7 +8,7 @@ import {
 
 import { DesignMode, DesignConfig, Project, UserProfile, UserTier, BlueprintParams } from './types';
 import { MODE_CONFIG, DEFAULT_PROMPTS, APP_NAME, ROOM_TYPES, ALLOWED_EMAILS } from './constants';
-import { getApiKey, saveProject, getProjects, deleteProject, getUserTier } from './services/storage';
+import { getApiKey, getUserTier } from './services/storage';
 import { generateDesigns, analyzeDesign } from './services/geminiService';
 import { exportToHTML, exportToPDF } from './services/exportService';
 import { ComparisonSlider } from './components/ComparisonSlider';
@@ -27,7 +27,6 @@ const App: React.FC = () => {
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showVideoModal, setShowVideoModal] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
   const [isFullscreenPreview, setIsFullscreenPreview] = useState(false);
 
   // Design State
@@ -246,20 +245,6 @@ const App: React.FC = () => {
       setIsResultPanorama(config.isPanorama);
       setIsResultStereo(config.isStereo3D);
       setIs360Active(config.isPanorama); // Auto-activate 360 view if pano generated
-
-      // Auto-save
-      const project: Project = {
-        id: Date.now().toString(),
-        timestamp: Date.now(),
-        mode: currentMode,
-        originalImage: uploadedImage,
-        generatedImages: results,
-        prompt: config.prompt,
-        style: config.style,
-        isPanorama: config.isPanorama,
-        isStereo: config.isStereo3D
-      };
-      saveProject(project);
 
     } catch (err: any) {
       setError(err.message || "Generation failed. Please check your API key and try again.");
@@ -503,11 +488,6 @@ const App: React.FC = () => {
             {currentMode}
           </h2>
           <p className="text-slate-400 text-sm mt-1 hidden md:block">Transform your space with AI.</p>
-        </div>
-        <div className="flex gap-3 w-full md:w-auto">
-            <button className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-800 text-slate-300 px-4 py-2 rounded-lg hover:bg-slate-700 border border-slate-700" onClick={() => setShowHistory(true)}>
-                <Clock size={16}/> History
-            </button>
         </div>
       </div>
 

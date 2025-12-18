@@ -109,9 +109,9 @@ export const generateDesigns = async (
         model: 'imagen-4.0-generate-001',
         prompt: prompt,
         config: {
-          numberOfImages: 4, // Generate 4 variations
+          numberOfImages: 4, 
           outputMimeType: 'image/jpeg',
-          aspectRatio: '4:3', // Standard aspect ratio for blueprints
+          aspectRatio: '4:3',
         },
       });
 
@@ -206,23 +206,27 @@ export const analyzeDesign = async (
     contextPrompt = `
       MARKET CONTEXT: Ethiopian Real Estate (Addis Ababa).
       - Currency: ETB (Ethiopian Birr).
-      - DATA SOURCE: You MUST search 'https://con.2merkato.com/am/prices' and other local Ethiopian real estate/construction sites to find real current prices for materials (cement, steel, finishing materials, labor).
-      - Estimate value increase based on the booming construction market in Addis Ababa.
+      - Provide estimated value increase based on your general knowledge of the construction market in Addis Ababa.
     `;
   } else {
     contextPrompt = `
       MARKET CONTEXT: International / Western Market (US/Europe).
       - Currency: USD ($).
-      - DATA SOURCE: You MUST search 'HomeAdvisor', 'Houzz', and other reliable Western real estate databases for pricing.
+      - Provide typical renovation cost estimates for this type of project based on standard market rates.
     `;
   }
 
-  // Strict JSON prompt without Schema config (as Search Tool is incompatible with responseSchema)
+  // Strict JSON prompt requesting internal knowledge usage
   const prompt = `
     Act as a senior Real Estate Appraiser and Contractor.
     Analyze the provided architectural/interior design image.
     
     ${contextPrompt}
+
+    INSTRUCTIONS:
+    - Rely on your internal knowledge base for costs, materials, and value estimates.
+    - Do not attempt to search the live web.
+    - Be realistic but optimistic about the renovation potential.
 
     OUTPUT FORMAT:
     You must output strictly conformant JSON text. 
@@ -231,8 +235,8 @@ export const analyzeDesign = async (
 
     JSON SCHEMA:
     {
-      "description": "Professional marketing description (max 50 words)",
-      "renovationTips": ["Tip 1", "Tip 2", "Tip 3"],
+      "description": "Professional description highlighting key materials, finishes, and design features used (max 50 words)",
+      "renovationTips": ["Tip 1 (Material Focus)", "Tip 2 (Construction Focus)", "Tip 3 (Finishing Focus)"],
       "estimatedValueIncrease": "Percentage (e.g. +15%)",
       "costEstimate": "Range (e.g. $10,000 - $15,000 or ETB format)",
       "costBreakdown": [
@@ -254,26 +258,10 @@ export const analyzeDesign = async (
           { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } }
         ]
       },
-      config: {
-        // DO NOT set responseMimeType or responseSchema when using googleSearch
-        tools: [{ googleSearch: {} }] // Enable Grounding
-      }
+      // CONFIG UPDATE: Explicitly NO tools. This ensures the Free Tier is used.
+      // Search Grounding (paid) is disabled.
+      config: {}
     });
-
-    // Extract Sources (Grounding)
-    const sources: GroundingSource[] = [];
-    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-    
-    if (groundingChunks) {
-      groundingChunks.forEach((chunk: any) => {
-        if (chunk.web?.uri && chunk.web?.title) {
-          sources.push({
-            title: chunk.web.title,
-            uri: chunk.web.uri
-          });
-        }
-      });
-    }
 
     let jsonStr = response.text || "{}";
     
@@ -296,7 +284,7 @@ export const analyzeDesign = async (
     return {
         ...data,
         marketContext,
-        sources
+        sources: [] // Search is disabled, so no external sources.
     };
 
   } catch (e: any) {

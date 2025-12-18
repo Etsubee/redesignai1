@@ -313,6 +313,28 @@ export const exportToHTML = (
         <!-- Single Image View (No Before Image available) -->
         <img style="width:100%; border-radius:6px; display:block;" src="${img}" alt="Generated Design ${idx + 1}">
         `}
+        
+        <!-- Detail Description Per Image -->
+        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #334155;">
+            <div style="font-size: 14px; color: #e2e8f0; margin-bottom: 8px;"><strong>Style:</strong> ${style}</div>
+            <div style="font-size: 13px; color: #94a3b8; margin-bottom: 8px;"><strong>Prompt:</strong> ${prompt}</div>
+            ${analysis ? `
+            <div style="background: rgba(5, 150, 105, 0.1); border: 1px solid rgba(5, 150, 105, 0.3); border-radius: 6px; padding: 10px; margin-top: 10px;">
+                <div style="font-size: 11px; text-transform: uppercase; color: #34d399; font-weight: bold; margin-bottom: 4px;">Design Analysis & Materials</div>
+                <div style="font-size: 13px; color: #cbd5e1; margin-bottom: 8px;">${analysis.description}</div>
+                
+                <!-- Added Materials Section from Renovation Tips -->
+                <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px;">
+                    <strong>Materials & Implementation:</strong>
+                    <ul style="margin: 0; padding-left: 15px; margin-top: 4px;">
+                        ${analysis.renovationTips.slice(0, 3).map(tip => `<li>${tip}</li>`).join('')}
+                    </ul>
+                </div>
+
+                <div style="font-size: 13px; color: #34d399; font-weight: bold; margin-top: 4px;">Est. Increase: ${analysis.estimatedValueIncrease}</div>
+            </div>
+            ` : ''}
+        </div>
     </div>
   `).join('');
 
@@ -349,7 +371,7 @@ export const exportToHTML = (
     </div>
 
     ${analysis ? `
-    <div class="section-title">AI Property Analysis</div>
+    <div class="section-title">Full Market & Material Analysis</div>
     <div class="analysis-box">
         <p style="color: #e2e8f0; margin-bottom: 20px;"><strong>Overview:</strong> ${analysis.description}</p>
         
@@ -365,7 +387,7 @@ export const exportToHTML = (
         </div>
 
         <div style="margin-top: 20px;">
-             <span class="info-label" style="margin-bottom: 10px;">Renovation Tips</span>
+             <span class="info-label" style="margin-bottom: 10px;">Renovation Tips & Materials</span>
              <ul>
                 ${analysis.renovationTips.map(t => `<li>${t}</li>`).join('')}
              </ul>
