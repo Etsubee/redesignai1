@@ -43,24 +43,25 @@ export const generateDesigns = async (
     ROLE: Elite Architectural Draftsman & Master Urban Planner.
     PROJECT: ${config.mode}.
     GLOBAL STYLE: ${config.style}.
+    ${config.roomType ? `SPACE CONTEXT: This is a ${config.roomType}. Ensure all furniture and lighting are appropriate for this specific room type.` : ''}
   `;
 
-  // Handle Multi-Area Transformation Logic with explicit inpainting cleanup
+  // Handle Multi-Area Transformation Logic with explicit artifact removal
   if (config.maskedAreas && config.maskedAreas.length > 0) {
     prompt += `
       CRITICAL INPAINTING PROTOCOL (ERASE SELECTION MARKS):
-      - The input mask defines specific regions to be redesigned.
-      - MANDATORY: COMPLETELY OBLITERATE the white selection boxes.
-      - DO NOT leave any white outlines, ghosting, or rectangular artifacts from the mask.
-      - The generated architectural elements must replace the masked regions entirely and blend into the original photo with pixel-perfect edge smoothing.
-      - If a mask is on a vacant lot, fill it with ${config.style} structures that look native to the photo.
+      - The input image contains white rectangular markers representing selection zones.
+      - YOUR PRIMARY DIRECTIVE: COMPLETELY OBLITERATE and remove these white marker boxes.
+      - DO NOT leave any white outlines, rectangular ghosting, or artifacts from the mask interface.
+      - Replace these regions with seamless, high-fidelity architectural content that blends perfectly with the unmasked surroundings.
+      - Smooth all edges between the generated content and the original photo.
     `;
     
     config.maskedAreas.forEach((area, index) => {
-      prompt += `\nZONE ${index + 1} ARCHITECTURAL SPECS:`;
+      prompt += `\nZONE ${index + 1} TRANSFORMATION:`;
       
       if (area.generationMode === 'prompt') {
-        prompt += ` - Target Transformation: "${area.prompt}". Ignore the global style for this specific plot.`;
+        prompt += ` - Target Instruction: "${area.prompt}". Ignore the global style for this specific plot.`;
       } else if (area.generationMode === 'style') {
         prompt += ` - Target Style: "${area.style}". Ignore the main project style for this specific plot.`;
       } else {
@@ -69,11 +70,10 @@ export const generateDesigns = async (
     });
     
     prompt += `
-      NEGATIVE CONSTRAINTS (CRITICAL):
-      - NO WHITE BOXES.
-      - NO VISIBLE MASK EDGES.
-      - NO OVERLAY ARTIFACTS.
-      - NO FLAT RECTANGULAR TEXTURES THAT MIMIC THE MASK SHAPE.
+      NEGATIVE CONSTRAINTS:
+      - NO WHITE BOXES OR OUTLINES.
+      - NO RECTANGULAR ARTIFACTS IN THE SKY OR TERRAIN.
+      - NO SEAMS OR VISIBLE MASK EDGES.
     `;
   }
 
@@ -155,7 +155,7 @@ export const generateDesigns = async (
       const generateVariation = async (index: number) => {
         try {
           const parts: any[] = [
-            { text: `${prompt} (Variation ${index + 1}). FINAL REMINDER: Seamlessly overpaint and remove every trace of the white selection boxes. Integration must be perfect.` },
+            { text: `${prompt} (Variation ${index + 1}). FINAL REMINDER: Seamlessly overpaint and remove every trace of the white selection boxes. Artifact-free output is mandatory.` },
             { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } }
           ];
           if (maskBase64) {

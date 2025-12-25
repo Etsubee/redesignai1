@@ -5,7 +5,8 @@ import {
   LogOut, User, Check, AlertCircle, Loader2, Download, Video, 
   ChevronRight, ChevronLeft, Maximize2, Plus, Minus, Globe, ExternalLink,
   Rotate3D, ScanEye, FileCode, FileText, X, Box, Crosshair, ListTodo,
-  Info, Sparkles, Map as MapIcon, Home, Edit3, Monitor, Maximize
+  Info, Sparkles, Map as MapIcon, Home, Edit3, Monitor, Maximize,
+  Layout
 } from 'lucide-react';
 
 import { DesignMode, DesignConfig, Project, UserProfile, UserTier, BlueprintParams, MaskedArea, RenderFormat } from './types';
@@ -89,13 +90,12 @@ const App: React.FC = () => {
 
   useEffect(() => {
     setStyle(MODE_CONFIG[currentMode].styles[0]);
-    setPrompt(DEFAULT_PROMPTS[currentMode] || "");
+    setPrompt(DEFAULT_PROMPTS[currentMode as keyof typeof DEFAULT_PROMPTS] || "");
     setIsAreaSelectionMode(false);
     setMaskedAreas([]);
     setBoundarySketch(null);
     setCanvasInitialImage(null);
     setRenderFormat('Standard');
-    // Force reset interactive aerial flag based on mode
     setIsInteractiveAerial(currentMode === DesignMode.AERIAL || currentMode === DesignMode.CITY);
   }, [currentMode]);
 
@@ -212,7 +212,7 @@ const App: React.FC = () => {
       mode: currentMode,
       style,
       subStyle,
-      roomType: currentMode === DesignMode.INTERIOR ? roomType : undefined,
+      roomType: (currentMode === DesignMode.INTERIOR || currentMode === DesignMode.RENOVATION) ? roomType : undefined,
       prompt,
       isStereo3D,
       isPanorama,
@@ -440,6 +440,21 @@ const App: React.FC = () => {
                 
                 {currentMode === DesignMode.BLUEPRINT && renderBlueprintControls()}
                 
+                {(currentMode === DesignMode.INTERIOR || currentMode === DesignMode.RENOVATION) && (
+                  <div className="animate-in slide-in-from-top-1 duration-300">
+                    <label className="text-[10px] font-black text-slate-600 uppercase mb-2 block tracking-widest flex items-center gap-2">
+                      <Layout size={12}/> Space Context
+                    </label>
+                    <select 
+                      value={roomType} 
+                      onChange={(e) => setRoomType(e.target.value)} 
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg text-white text-xs p-2.5 focus:ring-1 focus:ring-indigo-500 outline-none appearance-none cursor-pointer hover:border-slate-600 transition-colors"
+                    >
+                      {ROOM_TYPES.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                )}
+
                 {currentMode === DesignMode.SKETCH_TO_RENDER && (
                   <div>
                     <label className="text-[10px] font-black text-slate-600 uppercase mb-2 block tracking-widest flex items-center gap-2">
@@ -470,7 +485,7 @@ const App: React.FC = () => {
                   <div>
                     <label className="text-[10px] font-black text-slate-600 uppercase mb-2 block tracking-widest">Global Aesthetic</label>
                     <select value={style} onChange={(e) => setStyle(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg text-white text-xs p-2.5 focus:ring-1 focus:ring-indigo-500 outline-none appearance-none cursor-pointer hover:border-slate-600 transition-colors">
-                      {MODE_CONFIG[currentMode].styles.map(s => <option key={s} value={s}>{s}</option>)}
+                      {MODE_CONFIG[currentMode as DesignMode].styles.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
@@ -515,7 +530,7 @@ const App: React.FC = () => {
             <div className="lg:col-span-9 flex flex-col gap-6">
               <div className="bg-slate-900 rounded-2xl border border-slate-800/50 overflow-hidden relative shadow-[0_35px_60px_-15px_rgba(0,0,0,0.8)] aspect-[4/3] lg:aspect-auto lg:flex-1 group">
                 {isAreaSelectionMode ? (
-                  <AreaSelector image={uploadedImage!} areas={maskedAreas} onAreasChange={setMaskedAreas} availableStyles={MODE_CONFIG[currentMode].styles} />
+                  <AreaSelector image={uploadedImage!} areas={maskedAreas} onAreasChange={setMaskedAreas} availableStyles={MODE_CONFIG[currentMode as DesignMode].styles} />
                 ) : uploadedImage && generatedImages[selectedVariation] ? (
                   isInteractiveAerial ? (
                     <MapZoomViewer image={generatedImages[selectedVariation]} originalImage={uploadedImage} />
