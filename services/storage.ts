@@ -1,32 +1,9 @@
+
 import { Project, UserTier } from '../types';
 
 const KEYS = {
-  API_KEY: 'redesign_ai_api_key',
   PROJECTS: 'redesign_ai_projects',
   USER_TIER: 'redesign_ai_user_tier'
-};
-
-export const getApiKey = (uid?: string | null): string | null => {
-  if (uid) {
-    return localStorage.getItem(`${KEYS.API_KEY}_${uid}`);
-  }
-  return localStorage.getItem(KEYS.API_KEY);
-};
-
-export const setApiKey = (key: string, uid?: string | null) => {
-  if (uid) {
-    localStorage.setItem(`${KEYS.API_KEY}_${uid}`, key);
-  } else {
-    localStorage.setItem(KEYS.API_KEY, key);
-  }
-};
-
-export const removeApiKey = (uid?: string | null) => {
-  if (uid) {
-    localStorage.removeItem(`${KEYS.API_KEY}_${uid}`);
-  } else {
-    localStorage.removeItem(KEYS.API_KEY);
-  }
 };
 
 export const saveProject = (project: Project) => {

@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
-import { X, Key, Save, Trash2, HardDrive } from 'lucide-react';
-import { getApiKey, setApiKey, removeApiKey, getUserTier, setUserTier, getStorageUsage } from '../services/storage';
+import { X, Save, HardDrive } from 'lucide-react';
+import { getUserTier, setUserTier, getStorageUsage } from '../services/storage';
 import { UserTier } from '../types';
 
 interface SettingsModalProps {
@@ -10,28 +11,19 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, userId }) => {
-  const [key, setKey] = useState('');
   const [tier, setTierState] = useState<UserTier>(UserTier.FREE);
   const [storageUsed, setStorageUsed] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
-      setKey(getApiKey(userId) || '');
       setTierState(getUserTier());
       setStorageUsed(getStorageUsage());
     }
   }, [isOpen, userId]);
 
   const handleSave = () => {
-    if (key.trim()) setApiKey(key.trim(), userId);
-    else removeApiKey(userId);
     setUserTier(tier);
     onClose();
-  };
-
-  const handleClear = () => {
-    removeApiKey(userId);
-    setKey('');
   };
 
   if (!isOpen) return null;
@@ -45,29 +37,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, u
         </div>
 
         <div className="space-y-6">
-          {/* API Key Section */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Google Gemini API Key</label>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Key className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
-                <input
-                  type="password"
-                  value={key}
-                  onChange={(e) => setKey(e.target.value)}
-                  placeholder="Enter your API Key"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                />
-              </div>
-              <button onClick={handleClear} className="p-2 text-slate-400 hover:text-red-400 bg-slate-800 rounded-lg border border-slate-700">
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              {userId ? "Key saved for your account." : "Key saved to this browser."} You get 1500 free requests daily with your own key.
-            </p>
-          </div>
-
           {/* Tier Section */}
           <div className="p-4 bg-slate-800 rounded-lg border border-slate-700">
             <h4 className="text-sm font-medium text-white mb-3">Subscription Tier</h4>

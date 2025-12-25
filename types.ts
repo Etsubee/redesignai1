@@ -1,3 +1,4 @@
+
 export enum UserTier {
   FREE = 'Free',
   PRO = 'Pro'
@@ -17,7 +18,6 @@ export enum DesignMode {
   FURNITURE_EDIT = 'Furniture & Objects',
   SKETCH_TO_RENDER = 'Sketch-to-Render',
   BLUEPRINT = 'Blueprint',
-  FLOOR_PLAN_3D = 'Floor Plan to 3D',
   UNDER_CONSTRUCTION = 'Under Construction',
   ARCHITECTURAL = 'Architectural',
   ELECTRICAL = 'Electrical Planning',
@@ -30,13 +30,14 @@ export interface Project {
   id: string;
   timestamp: number;
   mode: DesignMode;
-  originalImage: string | null; // Null if generated from blank
-  generatedImages: string[]; // Array of Base64
+  originalImage: string | null;
+  generatedImages: string[];
   prompt: string;
   style: string;
   analysis?: RealEstateAnalysis;
   isPanorama?: boolean;
   isStereo?: boolean;
+  is3DModel?: boolean;
 }
 
 export interface CostItem {
@@ -70,6 +71,21 @@ export interface BlueprintParams {
   garages: number;
 }
 
+export type AreaGenerationMode = 'style' | 'prompt' | 'both';
+
+export interface MaskedArea {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  prompt: string;
+  style: string;
+  generationMode: AreaGenerationMode;
+}
+
+export type RenderFormat = 'Landscape' | 'Panoramic' | 'A0 Poster' | 'A1 Poster' | 'A2 Poster' | 'A3 Poster' | 'Standard';
+
 export interface DesignConfig {
   mode: DesignMode;
   style: string;
@@ -78,11 +94,15 @@ export interface DesignConfig {
   prompt: string;
   isStereo3D: boolean;
   isPanorama: boolean;
+  is3DModel: boolean;
   isGenerateNew?: boolean;
   blueprintParams?: BlueprintParams;
+  maskedAreas?: MaskedArea[];
+  boundarySketch?: string;
+  renderFormat?: RenderFormat;
 }
 
 export interface VideoSettings {
   mode: 'SINGLE' | 'SHOWCASE';
-  duration: number; // Seconds
+  duration: number;
 }
