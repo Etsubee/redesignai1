@@ -4,9 +4,9 @@ import {
   Menu, Upload, Image as ImageIcon, Layers, Zap, Settings, 
   LogOut, User, Check, AlertCircle, Loader2, Download, Video, 
   ChevronRight, ChevronLeft, Maximize2, Plus, Minus, Globe, ExternalLink,
-  Rotate3D, ScanEye, FileCode, FileText, X, Box, Crosshair, ListTodo,
+  Rotate3d, ScanEye, FileCode, FileText, X, Box, Crosshair, ListTodo,
   Info, Sparkles, Map as MapIcon, Home, Edit3, Monitor, Maximize,
-  Layout
+  Layout, Film, Glasses
 } from 'lucide-react';
 
 import { DesignMode, DesignConfig, Project, UserProfile, UserTier, BlueprintParams, MaskedArea, RenderFormat } from './types';
@@ -97,6 +97,11 @@ const App: React.FC = () => {
     setCanvasInitialImage(null);
     setRenderFormat('Standard');
     setIsInteractiveAerial(currentMode === DesignMode.AERIAL || currentMode === DesignMode.CITY);
+    
+    // Reset modalities on mode change
+    setIsPanorama(false);
+    setIsStereo3D(false);
+    setIs3DModel(false);
   }, [currentMode]);
 
   useEffect(() => {
@@ -174,7 +179,8 @@ const App: React.FC = () => {
         const img = new Image();
         img.onload = () => {
           const ratio = img.width / img.height;
-          setIsPanorama(ratio >= 1.8 && ratio <= 2.2);
+          // Auto-detect panorama only if it's very wide, otherwise leave to manual
+          if (ratio >= 1.8 && ratio <= 2.2) setIsPanorama(true);
         };
         img.src = result;
       };
@@ -281,6 +287,13 @@ const App: React.FC = () => {
 
   const updateBlueprintParam = (key: keyof BlueprintParams, value: number) => {
     setBlueprintParams(prev => ({ ...prev, [key]: Math.max(0, value) }));
+  };
+
+  // Helper to handle modality selection (radio button behavior)
+  const setModality = (mod: 'panorama' | 'stereo' | '3d') => {
+    setIsPanorama(mod === 'panorama' ? !isPanorama : false);
+    setIsStereo3D(mod === 'stereo' ? !isStereo3D : false);
+    setIs3DModel(mod === '3d' ? !is3DModel : false);
   };
 
   const renderBlueprintControls = () => (
@@ -500,10 +513,41 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 
+                {/* TECHNICAL OUTPUT SELECTOR */}
+                <div className="space-y-3 pt-4 border-t border-slate-800/50">
+                   <label className="text-[10px] font-black text-slate-600 uppercase block tracking-widest">Technical Output Modality</label>
+                   <div className="grid grid-cols-3 gap-2">
+                     <button
+                       onClick={() => setModality('panorama')}
+                       className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all ${isPanorama ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}`}
+                       title="360° Equirectangular View"
+                     >
+                       <Globe size={18} />
+                       <span className="text-[8px] font-black uppercase tracking-tighter">360° Pano</span>
+                     </button>
+                     <button
+                       onClick={() => setModality('stereo')}
+                       className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all ${isStereo3D ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}`}
+                       title="Stereo 3D SBS View"
+                     >
+                       <Glasses size={18} />
+                       <span className="text-[8px] font-black uppercase tracking-tighter">Stereo 3D</span>
+                     </button>
+                     <button
+                       onClick={() => setModality('3d')}
+                       className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all ${is3DModel ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}`}
+                       title="4-View Cardinal Object Sprite"
+                     >
+                       <Rotate3d size={18} />
+                       <span className="text-[8px] font-black uppercase tracking-tighter">Cardinal</span>
+                     </button>
+                   </div>
+                </div>
+
                 <button 
                   onClick={handleGenerate} 
                   disabled={isGenerating || (!uploadedImage && currentMode !== DesignMode.BLUEPRINT)}
-                  className="w-full py-4 bg-gradient-to-br from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 rounded-xl font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 disabled:opacity-30 transition-all shadow-2xl text-white"
+                  className="w-full py-4 bg-gradient-to-br from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 rounded-xl font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 disabled:opacity-30 transition-all shadow-2xl text-white mt-4"
                 >
                   {isGenerating ? <Loader2 className="animate-spin w-5 h-5" /> : <Zap size={20} fill="currentColor" />}
                   {isGenerating ? 'Synthesizing...' : 'Render Vision'}
@@ -517,6 +561,9 @@ const App: React.FC = () => {
                       <Sparkles size={14} /> Blueprint to 3D Render
                     </button>
                   )}
+                  <button onClick={() => setShowVideoModal(true)} className="w-full py-2.5 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/50 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors">
+                    <Film size={14} /> Cinematic Video Maker
+                  </button>
                   <button onClick={handleAnalyze} disabled={isAnalyzing} className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-400 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors">
                     {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin"/> : <Check className="w-4 h-4" />} Calculate Valuation
                   </button>
