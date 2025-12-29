@@ -86,6 +86,12 @@ export interface MaskedArea {
 
 export type RenderFormat = 'Landscape' | 'Panoramic' | 'A0 Poster' | 'A1 Poster' | 'A2 Poster' | 'A3 Poster' | 'Standard';
 
+export interface LocationData {
+  lat: number;
+  lng: number;
+  address?: string;
+}
+
 export interface DesignConfig {
   mode: DesignMode;
   style: string;
@@ -100,6 +106,8 @@ export interface DesignConfig {
   maskedAreas?: MaskedArea[];
   boundarySketch?: string;
   renderFormat?: RenderFormat;
+  location?: LocationData;
+  cityPlanningStrategy?: 'USER_INPUT' | 'AI_RECOMMENDED';
 }
 
 export interface VideoSettings {

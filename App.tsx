@@ -6,13 +6,13 @@ import {
   ChevronRight, ChevronLeft, Maximize2, Plus, Minus, Globe, ExternalLink,
   Rotate3d, ScanEye, FileCode, FileText, X, Box, Crosshair, ListTodo,
   Info, Sparkles, Map as MapIcon, Home, Edit3, Monitor, Maximize,
-  Layout, Film, Glasses
+  Layout, Film, Glasses, MapPin, BrainCircuit, Search
 } from 'lucide-react';
 
-import { DesignMode, DesignConfig, Project, UserProfile, UserTier, BlueprintParams, MaskedArea, RenderFormat } from './types';
+import { DesignMode, DesignConfig, Project, UserProfile, UserTier, BlueprintParams, MaskedArea, RenderFormat, LocationData } from './types';
 import { MODE_CONFIG, DEFAULT_PROMPTS, APP_NAME, ROOM_TYPES, ALLOWED_EMAILS } from './constants';
 import { getUserTier } from './services/storage';
-import { generateDesigns, analyzeDesign } from './services/geminiService';
+import { generateDesigns, analyzeDesign, getCityPlanningSuggestions } from './services/geminiService';
 import { exportToHTML, exportToPDF } from './services/exportService';
 import { ComparisonSlider } from './components/ComparisonSlider';
 import { VideoGeneratorModal } from './components/VideoGeneratorModal';
@@ -48,6 +48,11 @@ const App: React.FC = () => {
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [marketContext, setMarketContext] = useState<'Ethiopian' | 'International'>('International');
+
+  // City Planning Specific
+  const [cityStrategy, setCityStrategy] = useState<'USER_INPUT' | 'AI_RECOMMENDED'>('USER_INPUT');
+  const [aiSuggestions, setAiSuggestions] = useState<string>('');
+  const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
 
   // Visualization State
   const [isResultPanorama, setIsResultPanorama] = useState(false);
@@ -102,6 +107,11 @@ const App: React.FC = () => {
     setIsPanorama(false);
     setIsStereo3D(false);
     setIs3DModel(false);
+    
+    // Reset city state
+    if (currentMode !== DesignMode.CITY) {
+      setAiSuggestions('');
+    }
   }, [currentMode]);
 
   useEffect(() => {
@@ -133,6 +143,24 @@ const App: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  const handleCityAnalysis = async () => {
+    if (!uploadedImage) {
+      setError("Please upload an urban perspective photo for AI analysis.");
+      return;
+    }
+    setIsFetchingSuggestions(true);
+    setAiSuggestions('');
+    try {
+      const suggestion = await getCityPlanningSuggestions(uploadedImage);
+      setAiSuggestions(suggestion);
+      setPrompt(suggestion);
+    } catch (err: any) {
+      setError("City analysis failed: " + err.message);
+    } finally {
+      setIsFetchingSuggestions(false);
+    }
+  };
 
   const handleLogin = async () => {
     try {
@@ -179,25 +207,9 @@ const App: React.FC = () => {
         const img = new Image();
         img.onload = () => {
           const ratio = img.width / img.height;
-          // Auto-detect panorama only if it's very wide, otherwise leave to manual
           if (ratio >= 1.8 && ratio <= 2.2) setIsPanorama(true);
         };
         img.src = result;
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleBlueprintUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        setCanvasInitialImage(result);
-        setUploadedImage(result);
-        setGeneratedImages([]);
-        setAnalysis(null);
       };
       reader.readAsDataURL(file);
     }
@@ -212,7 +224,7 @@ const App: React.FC = () => {
     setAnalysis(null);
     setError(null);
     setIsGenerating(true);
-    setLoadingText(currentMode === DesignMode.SKETCH_TO_RENDER ? "Synthesizing Spatial View..." : "Architectural Processing...");
+    setLoadingText(currentMode === DesignMode.CITY ? "Optimizing Urban Grid..." : "Architectural Processing...");
 
     const config: DesignConfig = {
       mode: currentMode,
@@ -223,11 +235,12 @@ const App: React.FC = () => {
       isStereo3D,
       isPanorama,
       is3DModel,
-      isGenerateNew: currentMode === DesignMode.BLUEPRINT ? true : false,
+      isGenerateNew: (currentMode === DesignMode.BLUEPRINT) ? true : false,
       blueprintParams: (currentMode === DesignMode.BLUEPRINT) ? blueprintParams : undefined,
       maskedAreas: maskedAreas.length > 0 ? maskedAreas : undefined,
       boundarySketch: (currentMode === DesignMode.BLUEPRINT) ? (boundarySketch || undefined) : undefined,
-      renderFormat: (currentMode === DesignMode.SKETCH_TO_RENDER) ? renderFormat : undefined
+      renderFormat: (currentMode === DesignMode.SKETCH_TO_RENDER) ? renderFormat : undefined,
+      cityPlanningStrategy: currentMode === DesignMode.CITY ? cityStrategy : undefined
     };
 
     try {
@@ -239,7 +252,6 @@ const App: React.FC = () => {
       setIsResult3DModel(config.is3DModel);
       setIs360Active(config.isPanorama); 
       setIsInteractiveAerial(currentMode === DesignMode.AERIAL || currentMode === DesignMode.CITY);
-      setIsAreaSelectionMode(false);
     } catch (err: any) {
       setError(err.message || "Generation failed.");
     } finally {
@@ -261,92 +273,87 @@ const App: React.FC = () => {
     }
   };
 
-  const handleConvertToRender = () => {
-    const currentBlueprint = generatedImages[selectedVariation];
-    if (!currentBlueprint) return;
-    
-    setUploadedImage(currentBlueprint);
-    setCurrentMode(DesignMode.SKETCH_TO_RENDER);
-    setGeneratedImages([]);
-    setAnalysis(null);
-    
-    setStyle('3D Dollhouse View');
-    setRenderFormat('Panoramic');
-    setPrompt('High-fidelity architectural visualization of the COMPLETE floor plan. Show all rooms and furniture in a photorealistic 3D dollhouse state.');
-  };
-
-  const handleSendToCanvas = (img: string) => {
-    setCanvasInitialImage(img);
-    setUploadedImage(img);
-  };
-
   const handleExport = () => {
     if (generatedImages.length === 0) return;
     exportToHTML(uploadedImage, generatedImages, analysis, prompt, style);
   };
 
-  const updateBlueprintParam = (key: keyof BlueprintParams, value: number) => {
-    setBlueprintParams(prev => ({ ...prev, [key]: Math.max(0, value) }));
-  };
-
-  // Helper to handle modality selection (radio button behavior)
   const setModality = (mod: 'panorama' | 'stereo' | '3d') => {
     setIsPanorama(mod === 'panorama' ? !isPanorama : false);
     setIsStereo3D(mod === 'stereo' ? !isStereo3D : false);
     setIs3DModel(mod === '3d' ? !is3DModel : false);
   };
 
-  const renderBlueprintControls = () => (
-    <div className="space-y-4">
-      <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50 space-y-4 shadow-inner">
-        <div className="flex items-center justify-between">
-          <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2">
-            <MapIcon size={14}/> Site Geometry
-          </h4>
-          <div className="relative group/import">
-            <input type="file" onChange={handleBlueprintUpload} accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-            <button className="text-[9px] font-black text-slate-400 hover:text-white uppercase flex items-center gap-1 bg-slate-700 group-hover/import:bg-indigo-600 px-2 py-1.5 rounded transition-all shadow-lg">
-              <Upload size={10}/> Import Plan
+  const renderCityPlanningControls = () => (
+    <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+      <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700/50 space-y-4 shadow-inner">
+        <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+          <MapIcon size={14}/> Urban Strategy
+        </h4>
+
+        <div className="space-y-2">
+          <label className="text-[10px] font-black text-slate-600 uppercase block tracking-widest">Planning Logic</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button 
+              onClick={() => setCityStrategy('USER_INPUT')}
+              className={`py-2 rounded-lg text-[9px] font-black uppercase border transition-all ${cityStrategy === 'USER_INPUT' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+            >
+              Manual Input
+            </button>
+            <button 
+              onClick={() => {
+                setCityStrategy('AI_RECOMMENDED');
+                if (uploadedImage) handleCityAnalysis();
+              }}
+              className={`py-2 rounded-lg text-[9px] font-black uppercase border transition-all ${cityStrategy === 'AI_RECOMMENDED' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+            >
+              AI Proposal
             </button>
           </div>
         </div>
-        
-        <BoundaryCanvas initialImage={canvasInitialImage} onExport={setBoundarySketch} className="mb-2" />
-        
-        <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2 pt-2 border-t border-slate-700/50 mt-2">
-          <Home size={14}/> Project Specs
-        </h4>
-        
-        <div className="space-y-3">
-          <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded border border-slate-700/30">
-            <span className="text-[11px] font-bold text-slate-300">Target Area (m²)</span>
-            <input 
-              type="number" 
-              value={blueprintParams.area}
-              onChange={(e) => updateBlueprintParam('area', parseInt(e.target.value) || 0)}
-              className="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-right text-white font-mono"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-             {[
-               { label: 'Bedrooms', key: 'bedrooms' },
-               { label: 'Bathrooms', key: 'bathrooms' },
-               { label: 'Living', key: 'livingRooms' },
-               { label: 'Kitchens', key: 'kitchens' },
-               { label: 'Dining', key: 'diningRooms' },
-               { label: 'Garage', key: 'garages' },
-             ].map((item) => (
-                <div key={item.key} className="flex flex-col gap-1 p-2 bg-slate-900/30 rounded border border-slate-700/20">
-                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">{item.label}</span>
-                  <div className="flex items-center justify-between">
-                    <button onClick={() => updateBlueprintParam(item.key as keyof BlueprintParams, blueprintParams[item.key as keyof BlueprintParams] - 1)} className="p-1 hover:bg-indigo-600 hover:text-white rounded text-slate-500 transition-colors"><Minus size={10}/></button>
-                    <span className="text-xs font-black text-white">{blueprintParams[item.key as keyof BlueprintParams]}</span>
-                    <button onClick={() => updateBlueprintParam(item.key as keyof BlueprintParams, blueprintParams[item.key as keyof BlueprintParams] + 1)} className="p-1 hover:bg-indigo-600 hover:text-white rounded text-slate-500 transition-colors"><Plus size={10}/></button>
-                  </div>
+
+        {cityStrategy === 'AI_RECOMMENDED' && (
+          <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 space-y-3">
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[9px] font-black text-indigo-400 uppercase">
+                   {isFetchingSuggestions ? <Loader2 size={12} className="animate-spin" /> : <BrainCircuit size={12}/>}
+                   Smart Urban Insight
                 </div>
-             ))}
+                {uploadedImage && !isFetchingSuggestions && (
+                   <button 
+                     onClick={handleCityAnalysis}
+                     className="text-[8px] font-bold text-slate-500 hover:text-indigo-400 transition-colors flex items-center gap-1"
+                   >
+                     <Search size={10} /> RE-ANALYZE PHOTO
+                   </button>
+                )}
+             </div>
+             
+             {isFetchingSuggestions ? (
+                <div className="py-4 flex flex-col items-center gap-2">
+                   <div className="flex gap-1">
+                      <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                      <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                      <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce"></div>
+                   </div>
+                   <span className="text-[8px] text-slate-600 font-black uppercase tracking-widest">Scanning Perspective...</span>
+                </div>
+             ) : (
+                <div className="space-y-2">
+                   <p className="text-[10px] text-slate-400 leading-relaxed italic border-l-2 border-indigo-500/30 pl-2">
+                     {aiSuggestions || (uploadedImage ? "Click 'AI Proposal' to analyze your urban photo." : "Upload a photo to see AI-driven urban suggestions.")}
+                   </p>
+                   {aiSuggestions && (
+                     <div className="flex flex-wrap gap-1 mt-2">
+                        <span className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-400 text-[8px] font-bold uppercase rounded border border-indigo-500/20">G+10 Potential</span>
+                        <span className="px-1.5 py-0.5 bg-cyan-500/10 text-cyan-400 text-[8px] font-bold uppercase rounded border border-cyan-500/20">Transit Hub</span>
+                        <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 text-[8px] font-bold uppercase rounded border border-emerald-500/20">Mixed Use</span>
+                     </div>
+                   )}
+                </div>
+             )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -451,7 +458,18 @@ const App: React.FC = () => {
                   <Layers size={14} className="text-indigo-500"/> Design Logic
                 </h3>
                 
-                {currentMode === DesignMode.BLUEPRINT && renderBlueprintControls()}
+                {currentMode === DesignMode.BLUEPRINT && (
+                  <div className="space-y-4">
+                    <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50 space-y-4 shadow-inner">
+                      <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+                        <FileCode size={14}/> Technical Drafting
+                      </h4>
+                      <BoundaryCanvas onExport={setBoundarySketch} className="mb-2" />
+                    </div>
+                  </div>
+                )}
+
+                {currentMode === DesignMode.CITY && renderCityPlanningControls()}
                 
                 {(currentMode === DesignMode.INTERIOR || currentMode === DesignMode.RENOVATION) && (
                   <div className="animate-in slide-in-from-top-1 duration-300">
@@ -461,24 +479,9 @@ const App: React.FC = () => {
                     <select 
                       value={roomType} 
                       onChange={(e) => setRoomType(e.target.value)} 
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg text-white text-xs p-2.5 focus:ring-1 focus:ring-indigo-500 outline-none appearance-none cursor-pointer hover:border-slate-600 transition-colors"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg text-white text-xs p-2.5 outline-none appearance-none cursor-pointer"
                     >
                       {ROOM_TYPES.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                  </div>
-                )}
-
-                {currentMode === DesignMode.SKETCH_TO_RENDER && (
-                  <div>
-                    <label className="text-[10px] font-black text-slate-600 uppercase mb-2 block tracking-widest flex items-center gap-2">
-                      <Monitor size={12}/> Comprehensive Format
-                    </label>
-                    <select 
-                      value={renderFormat} 
-                      onChange={(e) => setRenderFormat(e.target.value as RenderFormat)} 
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg text-white text-xs p-2.5 focus:ring-1 focus:ring-indigo-500 outline-none appearance-none cursor-pointer hover:border-slate-600 transition-colors"
-                    >
-                      {RENDER_FORMATS.map(f => <option key={f} value={f}>{f}</option>)}
                     </select>
                   </div>
                 )}
@@ -497,7 +500,7 @@ const App: React.FC = () => {
                 <div className="space-y-4">
                   <div>
                     <label className="text-[10px] font-black text-slate-600 uppercase mb-2 block tracking-widest">Global Aesthetic</label>
-                    <select value={style} onChange={(e) => setStyle(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg text-white text-xs p-2.5 focus:ring-1 focus:ring-indigo-500 outline-none appearance-none cursor-pointer hover:border-slate-600 transition-colors">
+                    <select value={style} onChange={(e) => setStyle(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg text-white text-xs p-2.5 outline-none appearance-none cursor-pointer">
                       {MODE_CONFIG[currentMode as DesignMode].styles.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
@@ -507,36 +510,32 @@ const App: React.FC = () => {
                       value={prompt} 
                       onChange={(e) => setPrompt(e.target.value)} 
                       rows={4} 
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg text-white text-xs p-3 focus:ring-1 focus:ring-indigo-500 outline-none resize-none hover:border-slate-600 transition-colors" 
-                      placeholder="Describe the atmosphere or specific instructions..."
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg text-white text-xs p-3 focus:ring-1 focus:ring-indigo-500 outline-none resize-none" 
+                      placeholder={currentMode === DesignMode.CITY ? "Describe what to build: e.g. G+10 condominiums, rail station, modern park..." : "Describe the atmosphere..."}
                     />
                   </div>
                 </div>
                 
-                {/* TECHNICAL OUTPUT SELECTOR */}
                 <div className="space-y-3 pt-4 border-t border-slate-800/50">
-                   <label className="text-[10px] font-black text-slate-600 uppercase block tracking-widest">Technical Output Modality</label>
+                   <label className="text-[10px] font-black text-slate-600 uppercase block tracking-widest">Technical Modality</label>
                    <div className="grid grid-cols-3 gap-2">
                      <button
                        onClick={() => setModality('panorama')}
-                       className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all ${isPanorama ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}`}
-                       title="360° Equirectangular View"
+                       className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all ${isPanorama ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
                      >
                        <Globe size={18} />
                        <span className="text-[8px] font-black uppercase tracking-tighter">360° Pano</span>
                      </button>
                      <button
                        onClick={() => setModality('stereo')}
-                       className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all ${isStereo3D ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}`}
-                       title="Stereo 3D SBS View"
+                       className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all ${isStereo3D ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
                      >
                        <Glasses size={18} />
                        <span className="text-[8px] font-black uppercase tracking-tighter">Stereo 3D</span>
                      </button>
                      <button
                        onClick={() => setModality('3d')}
-                       className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all ${is3DModel ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}`}
-                       title="4-View Cardinal Object Sprite"
+                       className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all ${is3DModel ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
                      >
                        <Rotate3d size={18} />
                        <span className="text-[8px] font-black uppercase tracking-tighter">Cardinal</span>
@@ -556,11 +555,6 @@ const App: React.FC = () => {
 
               {generatedImages.length > 0 && (
                 <div className="glass-panel p-4 rounded-xl space-y-3">
-                  {currentMode === DesignMode.BLUEPRINT && (
-                    <button onClick={handleConvertToRender} className="w-full py-2.5 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/50 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors animate-pulse">
-                      <Sparkles size={14} /> Blueprint to 3D Render
-                    </button>
-                  )}
                   <button onClick={() => setShowVideoModal(true)} className="w-full py-2.5 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/50 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors">
                     <Film size={14} /> Cinematic Video Maker
                   </button>
@@ -588,7 +582,7 @@ const App: React.FC = () => {
                   ) : isResult3DModel ? (
                     <ModelViewer image={generatedImages[selectedVariation]} />
                   ) : (
-                    <ComparisonSlider beforeImage={uploadedImage} afterImage={generatedImages[selectedVariation]} />
+                    <ComparisonSlider beforeImage={uploadedImage || ''} afterImage={generatedImages[selectedVariation]} />
                   )
                 ) : (uploadedImage || currentMode === DesignMode.BLUEPRINT) ? (
                   <div className="w-full h-full relative flex items-center justify-center bg-slate-950">
@@ -597,13 +591,13 @@ const App: React.FC = () => {
                         {isInteractiveAerial ? (
                           <MapZoomViewer image={uploadedImage} />
                         ) : (
-                          <img src={uploadedImage} className="max-h-full max-w-full object-contain opacity-40 transition-all duration-700 blur-[2px] group-hover:blur-none group-hover:opacity-60 mx-auto" />
+                          <img src={uploadedImage} className="max-h-full max-w-full object-contain opacity-40 transition-all duration-700 blur-[2px] group-hover:blur-none mx-auto" />
                         )}
                       </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center text-slate-600 gap-4 opacity-30">
-                         <FileText size={80} />
-                         <p className="text-sm font-bold uppercase tracking-widest">Generative Blueprint Canvas</p>
+                         {currentMode === DesignMode.CITY ? <Globe size={80} /> : <FileText size={80} />}
+                         <p className="text-sm font-bold uppercase tracking-widest">{currentMode === DesignMode.CITY ? 'Global Urban Sector' : 'Generative Blueprint'}</p>
                       </div>
                     )}
                     {isGenerating && (
@@ -623,53 +617,26 @@ const App: React.FC = () => {
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 p-12 text-center bg-slate-950">
                     <div className="relative mb-8 p-10 bg-slate-900 rounded-full border border-slate-800 shadow-inner group/icon">
-                      {isGenerating ? (
-                        <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center backdrop-blur-md z-[60] animate-in fade-in duration-700 rounded-full">
-                           <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-                        </div>
-                      ) : (
-                        <>
-                          <ImageIcon size={64} className="opacity-10 group-hover/icon:opacity-20 transition-opacity" />
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <Plus size={32} className="text-indigo-500/40 animate-pulse" />
-                          </div>
-                        </>
-                      )}
+                      <ImageIcon size={64} className="opacity-10 group-hover/icon:opacity-20 transition-opacity" />
                     </div>
                     <h3 className="text-2xl font-black text-slate-300 mb-3 tracking-tight">VIRTUAL STUDIO IDLE</h3>
-                    <p className="max-w-md text-sm text-slate-500 leading-relaxed font-medium">Please ingest a reference perspective or utilize the site sketch tool to initialize the AI synthesis cycle.</p>
+                    <p className="max-w-md text-sm text-slate-500 leading-relaxed font-medium">Please ingest a reference perspective or utilize the urban selector to initialize the AI synthesis cycle.</p>
                   </div>
                 )}
               </div>
 
-              {/* Variations Strip */}
               {generatedImages.length > 0 && !isAreaSelectionMode && (
                 <div className="flex gap-4 overflow-x-auto pb-6 custom-scrollbar px-2">
                   {generatedImages.map((img, idx) => (
                     <button 
                       key={idx} 
                       onClick={() => setSelectedVariation(idx)}
-                      className={`group relative shrink-0 w-28 h-20 lg:w-44 lg:h-28 rounded-xl overflow-hidden border-2 transition-all duration-300 ${selectedVariation === idx ? 'border-indigo-500 scale-105 shadow-2xl shadow-indigo-600/40 ring-4 ring-indigo-500/10' : 'border-slate-800 grayscale opacity-40 hover:grayscale-0 hover:opacity-100 hover:border-slate-600 hover:scale-102'}`}
+                      className={`group relative shrink-0 w-28 h-20 lg:w-44 lg:h-28 rounded-xl overflow-hidden border-2 transition-all duration-300 ${selectedVariation === idx ? 'border-indigo-500 scale-105 shadow-2xl shadow-indigo-600/40 ring-4 ring-indigo-500/10' : 'border-slate-800 grayscale opacity-40 hover:grayscale-0 hover:opacity-100'}`}
                     >
                       <img src={img} className="w-full h-full object-cover" />
-                      
-                      {currentMode === DesignMode.BLUEPRINT && (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleSendToCanvas(img); }}
-                          className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity z-20"
-                          title="Edit in Sketch Workspace"
-                        >
-                          <div className="flex flex-col items-center gap-1">
-                             <Edit3 size={20} className="text-white" />
-                             <span className="text-[8px] font-black uppercase text-white tracking-widest">Edit Layout</span>
-                          </div>
-                        </button>
-                      )}
-                      
                       <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-[8px] font-black text-white px-2 py-0.5 rounded-full uppercase border border-white/10 tracking-widest">v{idx + 1}</div>
                     </button>
                   ))}
-                  <div className="shrink-0 w-10"></div>
                 </div>
               )}
             </div>
